@@ -1,7 +1,6 @@
 # Data sources and platform policy audit
 
-Audit date: **2026-11-16**. Every statement below was checked against the linked
-document on that date. Sources change; re-verify before enabling a connector.
+Initial audit date: **2026-11-16**. Follow-up review: **2026-11-16** (broader-audience discovery check). Every statement below reflects what was checked on those dates. Sources change; re-verify before enabling a connector.
 
 ## 1. Discord platform rules
 
@@ -33,10 +32,10 @@ Hard consequences adopted in code:
 
 | Source | Documented public API? | Result | Verdict |
 | --- | --- | --- | --- |
-| **Top.gg** — <https://docs.top.gg/> | No server/community search endpoint. v0 documents `GET /bots`, `GET /bots/:id/stats`, `GET /bots/:id/check`, `POST /bots/:id/stats`; v1 documents projects, votes, webhooks, OAuth, users. All bot endpoints require a Top.gg token and are limited to 60 req/min. | No documented way to search *servers*. A token would have to be registered to a project the user owns, and the data may only be used for that project's stated functionality (§15 of Discord's policy is about Discord API data, but Top.gg's own terms restrict token use to the registered project). | **Rejected** — no documented community-search API; token cannot be legitimately obtained for this use. |
-| **DISBOARD** — <https://disboard.org/> | None published. `https://disboard.org/terms` returned **HTTP 403** to a plain automated request, indicating bot mitigation. | Undocumented, access-controlled. Scraping is not permitted by any statement we could read, and we will not reverse-engineer. | **Rejected** — no documented API, automated access blocked. |
-| **Discord.me** — <https://discord.me/> | None published. `https://discord.me/terms` returned **HTTP 404**. | No documented API and no retrievable terms. | **Rejected** — cannot establish permission. |
-| **DiscordServers.com** — <https://discordservers.com/> | `https://discordservers.com/api` returned **HTTP 404**. No API documentation found. | No documented API. | **Rejected** — cannot establish permission. |
+| **Top.gg** — <https://docs.top.gg/> | Bot/project APIs only; no documented public server/community search endpoint for arbitrary discovery. Public API docs pages were not openly accessible during recheck (403/404). | No documented, permitted way to search *servers* for this app's use. | **Rejected** — no documented community-search API for this use. |
+| **DISBOARD** — <https://disboard.org/> | None published. `https://disboard.org/site/tos` returned **HTTP 403** to a plain automated request; `robots.txt` allows general browsing but signals restrictions for many automated/training bots. | Undocumented, access-controlled. No permission to scrape/bulk-collect listings was established, and prior automated requests were blocked (403). | **Rejected** — no documented API, automated access blocked / not permitted. |
+| **Discord.me** — <https://discord.me/> | None published. | ToS (<https://discord.me/tos>, v3 2025-10-07) explicitly prohibits scraping/harvesting user data without explicit permission and using automated tools/bots to interact with the platform without explicit permission. | **Rejected** — automated retrieval not permitted. |
+| **DiscordServers.com** — <https://discordservers.com/> | `https://discordservers.com/api` returned **HTTP 404** in the initial audit; no public server-search API documentation found. | No documented, permitted API for community search was identified. | **Rejected** — cannot establish permitted automated access. |
 | **Discord official Server Discovery** — <https://discord.com/servers> | No public API. Requires an authenticated browser session. | Fetching it would be scraping Discord services, prohibited by Developer Policy §20. | **Rejected** — prohibited. |
 
 No candidate directory offers a free, documented, publicly queryable API for
@@ -85,7 +84,17 @@ are never shown as live discovery results.
   first.
 - Deleting a community deletes its provenance rows (cascade).
 
-## 6. Re-verification checklist
+## 6. Broader-audience discovery (follow-up, 2026-11-16)
+
+Requested audiences reviewed: students, online earning, freelancing, remote work, side hustles, entrepreneurship, digital marketing, business/startups, programming/technology.
+
+- The integrated, permitted source (**Awesome Discord Communities**, CC-BY-4.0, GitHub raw content) is primarily programming/technology-focused.
+- Rechecked candidate directories above: DISBOARD, Discord.me, DiscordServers.com, Top.gg, and Discord official discovery remain **unusable/unpermitted** for automated community discovery in this app (no documented permitted server-search API, explicit ToS prohibitions on automated scraping/harvesting/tools, or access blocked).
+- No additional Discord-community-specific curated dataset with a clear permissive license and verifiable permission for automated retrieval covering the requested non-programming audiences was identified during this review. No unverified connector was added.
+
+**Result:** automated discovery coverage beyond the programming-focused Awesome list remains limited. **CSV import and manual entry are the supported, fully functional path** for students/freelancing/remote-work/side-hustle/entrepreneurship/marketing/business communities, using user-supplied or otherwise legitimately obtained listings. This limitation is stated in-app and in the README.
+
+## 7. Re-verification checklist
 
 Before adding or re-enabling a connector:
 
