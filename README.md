@@ -12,13 +12,14 @@ message, or automates a Discord account.
 | Area | State |
 | --- | --- |
 | Source-policy audit | done — see [`docs/data-sources.md`](docs/data-sources.md) |
-| Server foundation, health endpoint, UI shell | working |
-| Community records, dashboard, search | in progress |
-| CSV import/export | in progress |
-| Relevance scoring and review workflow | in progress |
-| Discovery connector | in progress |
-| Message drafts | in progress |
-| Deployment | not deployed |
+| Server foundation, health endpoint, CI | done |
+| Community records, dashboard, search/filter/sort/pagination | done |
+| CSV preview/commit/export and manual entry | done |
+| Relevance scoring and review workflow | done — explainable factors, prohibited = unsuitable (no override) |
+| Discovery connector | done — only the permitted CC-BY-4.0 source enabled; others rejected/unavailable |
+| Message drafts | done — deterministic templates, no AI/key, all required disclosures + forbidden-claim guard |
+| UI polish/accessibility | done — responsive SPA, Lighthouse 100/100/100 (accessibility/best practices/SEO) on overview |
+| Deployment | **not deployed** — readiness notes in [`docs/deployment.md`](docs/deployment.md) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the milestone table.
 
@@ -41,6 +42,15 @@ Open <http://127.0.0.1:8080>.
 
 The SQLite file is created automatically at `data/scout.db` (ignored by Git).
 Migrations are applied at boot.
+
+## Features
+
+- **Discovery**: searches the audited, permitted public source (Awesome Discord Communities, CC-BY-4.0, attributed). Results are scored against the query, deduplicated by invite code, and stored with provenance and run history. Unavailable/rejected sources are listed honestly in-app.
+- **Communities**: create/edit/review/delete records; search, filter (status/source/tag/outreach-only), sort and paginate. Promotion policy is `allowed` / `prohibited` / `unknown` (unknown is never treated as permission); prohibited communities are flagged unsuitable with no override.
+- **Scoring**: explainable 0–100 breakdown (topic, audience, description, policy evidence, and a policy cap factor) shown in the UI.
+- **CSV**: preview with per-row status/errors, commit valid rows (dedup/merge provenance), and export all saved communities.
+- **Drafts**: deterministic, copy-only message drafts (concise/long, tones) that always disclose remote commission-based work, the **$12 initial deposit**, and that it is **recoverable after your first payment, subject to the company's terms**, and invite questions. A runtime guard refuses drafts containing unsupported claims. Nothing is posted automatically.
+- **Fallback**: when discovery is unavailable, CSV import and manual entry remain fully usable.
 
 ### Configuration
 
@@ -69,11 +79,7 @@ CI runs the same checks plus a health-endpoint smoke test
 
 Base path: `/api`. Errors are `{"error":{"code","message"}}`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/health` | Liveness plus database reachability |
-
-More endpoints are documented in [`docs/api.md`](docs/api.md) as they land.
+Key endpoints (see [`docs/api.md`](docs/api.md) for full request/response shapes): `GET /api/health`, `GET /api/dashboard`, `GET /api/meta`, CRUD `/api/communities` + `/api/communities/:id/review`, `POST /api/csv/preview|commit`, `GET /api/csv/export`, `GET /api/sources`, `GET /api/discovery/runs`, `POST /api/discovery/search`, `POST /api/message/draft`. A `robots.txt` disallows `/api/`.
 
 ## Data sources
 
@@ -93,6 +99,10 @@ primary way to work with other audiences.**
 - Scrape Discord or any directory that blocks automated access.
 - Invent channel names, rules, member counts, or invite links.
 - Claim the opportunity is verified, salaried, or risk-free.
+
+## Deployment
+
+**Not deployed.** Build/run locally or via the included `Dockerfile`; see [`docs/deployment.md`](docs/deployment.md) for readiness notes, health checks, and the (unverified) caveats around free-tier hosting and SQLite persistence.
 
 ## Licence
 
