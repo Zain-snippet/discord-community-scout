@@ -7,7 +7,11 @@
 mod config;
 mod db;
 mod error;
+mod models;
+mod repo;
 mod routes;
+mod scoring;
+mod validate;
 
 use std::net::SocketAddr;
 
