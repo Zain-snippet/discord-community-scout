@@ -3,13 +3,14 @@
 pub mod communities;
 pub mod csv;
 pub mod dashboard;
+pub mod discovery;
 pub mod health;
 
 use std::sync::Arc;
 
 use axum::{
     extract::{FromRequest, Request},
-    routing::{get, patch},
+    routing::{get, patch, post},
     Router,
 };
 use serde::de::DeserializeOwned;
@@ -22,14 +23,16 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{config::Config, error::AppError};
+use crate::{config::Config, discovery::SourceCache, error::AppError};
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
-    // Read by discovery once the connector lands; the cache TTL lives here.
-    #[allow(dead_code)]
     pub config: Arc<Config>,
+    /// Shared HTTP client for the discovery connector, with timeouts applied.
+    pub http: reqwest::Client,
+    /// In-memory cache of fetched source documents.
+    pub cache: SourceCache,
 }
 
 /// JSON extractor that reports failures through the same error envelope as the
@@ -94,4 +97,7 @@ fn api_router() -> Router<AppState> {
         .route("/csv/preview", axum::routing::post(csv::preview))
         .route("/csv/commit", axum::routing::post(csv::commit))
         .route("/csv/export", get(csv::export))
+        .route("/sources", get(discovery::sources))
+        .route("/discovery/runs", get(discovery::runs))
+        .route("/discovery/search", post(discovery::search))
 }

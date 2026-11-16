@@ -8,9 +8,6 @@ use axum::{
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
-// Some variants and helpers are consumed by the community and CSV routes added
-// in later milestones; this allowance disappears once they are wired up.
-#[allow(dead_code)]
 pub enum AppError {
     #[error("{0}")]
     BadRequest(String),
@@ -20,6 +17,11 @@ pub enum AppError {
 
     #[error("{0}")]
     Conflict(String),
+
+    /// An upstream source could not be reached or refused the request. The
+    /// message is written for the user and never includes internal detail.
+    #[error("{0}")]
+    Upstream(String),
 
     #[error("database error")]
     Database(#[from] sqlx::Error),
@@ -47,6 +49,7 @@ impl AppError {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request", m.clone()),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found", m.clone()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
+            AppError::Upstream(m) => (StatusCode::BAD_GATEWAY, "upstream_error", m.clone()),
             AppError::Database(err) => {
                 // Log the detail, never return it to the client.
                 tracing::error!(error = %err, "database error");

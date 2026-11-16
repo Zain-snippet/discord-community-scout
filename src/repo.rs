@@ -304,16 +304,22 @@ async fn invite_code_taken(
 
 /// Creates a community entered by hand.
 pub async fn create_manual(pool: &SqlitePool, input: &CommunityInput) -> AppResult<Community> {
-    create_from_source(pool, input, "Manual entry", None, None).await
+    create_from_source(pool, input, "Manual entry", None, None, None).await
 }
 
-/// Creates a community attributed to a given source (manual entry or CSV import).
+/// Creates a community attributed to a given source (manual entry, CSV import or
+/// a discovery connector).
+///
+/// `score_query` is the discovery query the record was found with. When it is
+/// `None` the record is scored against its own tags, so the stored number is
+/// still explainable rather than arbitrary.
 pub async fn create_from_source(
     pool: &SqlitePool,
     input: &CommunityInput,
     source_name: &str,
     external_id: Option<&str>,
     listing_url: Option<&str>,
+    score_query: Option<&str>,
 ) -> AppResult<Community> {
     let name = validate::required_text(&input.name, "Name", validate::MAX_NAME)
         .map_err(AppError::bad_request)?;
@@ -367,8 +373,9 @@ pub async fn create_from_source(
         }
     }
 
+    let tag_query = self_query(&tags);
     let score = score_record(
-        self_query(&tags).as_deref(),
+        score_query.or(tag_query.as_deref()),
         &name,
         &description,
         &tags,

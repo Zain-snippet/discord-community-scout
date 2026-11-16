@@ -145,6 +145,7 @@ pub async fn commit(
                     "CSV import",
                     None,
                     input.canonical_url.as_deref(),
+                    None,
                 )
                 .await
                 {

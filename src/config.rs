@@ -8,8 +8,6 @@ use anyhow::{bail, Result};
 pub struct Config {
     pub port: u16,
     pub database_url: String,
-    // Used by the discovery cache; wired up with the connector in milestone 5.
-    #[allow(dead_code)]
     pub cache_ttl_secs: u64,
 }
 

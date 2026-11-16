@@ -7,11 +7,13 @@
 mod config;
 mod csv_io;
 mod db;
+mod discovery;
 mod error;
 mod models;
 mod repo;
 mod routes;
 mod scoring;
+mod sources;
 mod validate;
 
 use std::net::SocketAddr;
@@ -32,9 +34,24 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to open the database")?;
 
+    // One shared client for outbound discovery fetches: bounded timeouts so a
+    // slow source cannot hang a request, and a normal user agent.
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .user_agent(concat!(
+            "discord-community-scout/",
+            env!("CARGO_PKG_VERSION"),
+            " (public community research tool)"
+        ))
+        .build()
+        .context("failed to build the HTTP client")?;
+
     let state = routes::AppState {
         pool,
         config: std::sync::Arc::new(config.clone()),
+        http,
+        cache: discovery::SourceCache::default(),
     };
 
     let app = routes::router(state);
