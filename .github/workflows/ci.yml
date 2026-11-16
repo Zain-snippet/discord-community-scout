@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build:
+    name: build, test, lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --locked --all-targets
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Health smoke test
+        run: |
+          mkdir -p data
+          ./target/debug/discord-community-scout &
+          server_pid=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health | grep -q '"status":"ok"'; then
+              echo "health endpoint OK"
+              kill $server_pid
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "health endpoint did not come up"
+          kill $server_pid || true
+          exit 1
