@@ -5,6 +5,7 @@ pub mod csv;
 pub mod dashboard;
 pub mod discovery;
 pub mod health;
+pub mod messages;
 
 use std::sync::Arc;
 
@@ -97,6 +98,7 @@ fn api_router() -> Router<AppState> {
         .route("/csv/preview", axum::routing::post(csv::preview))
         .route("/csv/commit", axum::routing::post(csv::commit))
         .route("/csv/export", get(csv::export))
+        .route("/message/draft", post(messages::create_draft))
         .route("/sources", get(discovery::sources))
         .route("/discovery/runs", get(discovery::runs))
         .route("/discovery/search", post(discovery::search))

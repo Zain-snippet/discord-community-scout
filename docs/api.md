@@ -13,6 +13,7 @@ Errors use a single envelope and never include stack traces or database detail:
 | `bad_request` | 400 |
 | `not_found` | 404 |
 | `conflict` | 409 |
+| `upstream_error` | 502 |
 | `database_error` | 500 |
 | `internal_error` | 500 |
 
@@ -203,10 +204,143 @@ Records the review decision and recomputes the score.
 
 ---
 
-## Planned endpoints
+## POST /api/csv/preview
 
-Implemented in later milestones and documented here when they land:
+Validates a CSV document and reports what committing it would do. Format is
+documented in [`csv-format.md`](csv-format.md).
 
-- `GET /api/sources`, `GET /api/discovery/runs`, `POST /api/discovery/search`
-- `POST /api/csv/preview`, `POST /api/csv/commit`, `GET /api/csv/export`
-- `POST /api/message/draft`
+```json
+{ "csv": "name,description,...\nStudents Hub,..." }
+```
+
+```json
+{
+  "total_rows": 4, "new_rows": 2, "merge_rows": 0, "invalid_rows": 2,
+  "rows": [
+    { "line": 2, "name": "Students Hub", "status": "new", "errors": [] },
+    { "line": 5, "name": "Duplicate", "status": "invalid",
+      "errors": ["Duplicate invite link within this file."] }
+  ]
+}
+```
+
+Header problems are a `400` with a message. Row problems are reported per row and
+never dropped silently.
+
+## POST /api/csv/commit
+
+Same body as preview. Saves every valid row.
+
+```json
+{ "imported": 2, "merged": 0, "skipped_invalid": 2,
+  "problems": ["Line 4: not saved — invite_url/canonical_url: Only http and https URLs are allowed."] }
+```
+
+`merge` rows attach a `CSV import` provenance row to the existing record; they do
+not overwrite it. Imported records carry `primary_source = "CSV import"`.
+
+## GET /api/csv/export
+
+Returns `text/csv` as an attachment with every saved community and its review
+fields. Values starting with `=`, `+`, `-`, `@`, tab or carriage return are
+prefixed with an apostrophe so spreadsheets treat them as text.
+
+---
+
+## GET /api/sources
+
+Every source considered in the audit, with an honest availability flag.
+
+```json
+{
+  "discovery_available": true,
+  "sources": [
+    { "id": "awesome-discord-communities", "name": "Awesome Discord Communities",
+      "homepage": "https://github.com/mhxion/awesome-discord-communities",
+      "license": "CC-BY-4.0", "enabled": true,
+      "notes": "Curated public list read through the GitHub REST API…" },
+    { "id": "disboard", "name": "DISBOARD", "enabled": false,
+      "notes": "No public API; automated requests are blocked (HTTP 403). Not scraped." }
+  ]
+}
+```
+
+Disabled sources are listed so the UI states plainly that they are not
+integrated, instead of hiding them or pretending search covers them.
+
+## GET /api/discovery/runs?limit=20
+
+Most recent runs, newest first. `limit` is clamped to 1–50.
+
+```json
+[{ "id": "…", "query": "rust", "requests_limit": 5, "status": "succeeded",
+   "result_count": 66, "saved_count": 5, "error": null,
+   "started_at": "…", "finished_at": "…" }]
+```
+
+## POST /api/discovery/search
+
+Runs one search against the permitted source, scores and saves the results.
+
+```json
+{ "query": "rust programming", "limit": 5 }
+```
+
+`limit` is clamped to 1–50 (default 10). A blank or over-200-character query is a
+`400`.
+
+```json
+{
+  "run_id": "…", "query": "rust programming", "requested_limit": 5,
+  "status": "succeeded", "total_matched": 66, "returned": 5,
+  "saved_new": 5, "merged_existing": 0, "partial": false, "duration_ms": 748,
+  "attribution": "Source: Awesome Discord Communities (…), licensed CC-BY-4.0.",
+  "results": [ { "community": { /* Community */ }, "status": "new" } ]
+}
+```
+
+- Results are deduplicated by invite code. A community already saved is returned
+  with `status: "existing"` and gains a provenance row; its data is not
+  overwritten.
+- If the upstream source is unreachable the response is `502` with
+  `{"error":{"code":"upstream_error"}}` and a message pointing to CSV import and
+  manual entry, which never depend on a third party.
+
+## POST /api/message/draft
+
+Builds deterministic drafts — no AI service, no API key.
+
+```json
+{ "community_id": "…", "tone": "conversational", "variant": "concise",
+  "notes": "optional extra context you want appended" }
+```
+
+`tone`: `conversational` (default) or `direct`. `variant`: `concise` (default) or
+`long`. The other length is always returned as `alternative`.
+
+```json
+{
+  "community_id": "…", "community_name": "Students Hub",
+  "draft": {
+    "variant": "concise",
+    "text": "Hey everyone! … remote, commission-based … $12 initial deposit … recoverable after your first payment, subject to the company's terms … happy to share the details …",
+    "can_post": true,
+    "warnings": [
+      "This community's rules are not verified. Read its posted rules before posting.",
+      "This is a draft. Review it yourself, confirm it matches the community's rules, and post it manually if appropriate."
+    ],
+    "disclosures": ["Remote", "Commission-based, not salaried", "$12 initial deposit disclosed",
+      "Deposit recoverable after the first payment, subject to the company's terms",
+      "Invitation to ask for details"],
+    "posting_target": null
+  },
+  "alternative": { /* the other variant */ }
+}
+```
+
+- `can_post` is `false` when the community's rules prohibit promotion, and
+  `posting_target` is then always `null`. There is no override.
+- `posting_target` is only set from a channel name the user recorded themselves.
+- A runtime guard re-checks every draft against a forbidden-claims list and refuses
+  to return one that contains an unsupported claim.
+

@@ -6,13 +6,13 @@ done when its code is committed, builds, and its tests pass.
 | # | Milestone | Status |
 | --- | --- | --- |
 | 0 | Repository and source-policy audit | done — `docs/data-sources.md`, `docs/architecture.md` |
-| 1 | Working application foundation (Axum, health, config, logging, CI) | in progress |
-| 2 | Database, community CRUD, dashboard metrics, search/filter/sort | planned |
-| 3 | CSV import/export and manual entry | planned |
-| 4 | Relevance scoring and review workflow | planned |
-| 5 | Verified public discovery connector (Awesome Discord Communities) | planned |
-| 6 | Message generator | planned |
-| 7 | Polish, security, usability | planned |
+| 1 | Working application foundation (Axum, health, config, logging, CI) | done |
+| 2 | Database, community CRUD, dashboard metrics, search/filter/sort | done — committed with milestone 4 |
+| 3 | CSV import/export and manual entry | done |
+| 4 | Relevance scoring and review workflow | done |
+| 5 | Verified public discovery connector (Awesome Discord Communities) | done — enabled with an in-memory cache; other directories rejected in the audit |
+| 6 | Message generator | done — deterministic templates with disclosure and forbidden-claim tests |
+| 7 | Polish, security, usability | in progress |
 | 8 | Deployment readiness and final verification | planned |
 
 ## Known constraints recorded up front

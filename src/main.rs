@@ -14,6 +14,7 @@ mod repo;
 mod routes;
 mod scoring;
 mod sources;
+mod templates;
 mod validate;
 
 use std::net::SocketAddr;
