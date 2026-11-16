@@ -5,6 +5,7 @@
 //! user's review decisions, and drafts outreach text for manual review.
 
 mod config;
+mod csv_io;
 mod db;
 mod error;
 mod models;

@@ -1,6 +1,7 @@
 //! Router assembly and shared extractors.
 
 pub mod communities;
+pub mod csv;
 pub mod dashboard;
 pub mod health;
 
@@ -90,4 +91,7 @@ fn api_router() -> Router<AppState> {
                 .delete(communities::remove),
         )
         .route("/communities/{id}/review", patch(communities::review))
+        .route("/csv/preview", axum::routing::post(csv::preview))
+        .route("/csv/commit", axum::routing::post(csv::commit))
+        .route("/csv/export", get(csv::export))
 }

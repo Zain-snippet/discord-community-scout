@@ -115,7 +115,7 @@ pub struct Provenance {
 }
 
 /// Payload for creating or updating a community by hand.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CommunityInput {
     pub name: String,
     #[serde(default)]
@@ -158,7 +158,7 @@ pub struct ReviewInput {
 }
 
 /// Query parameters for the community list.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub q: Option<String>,

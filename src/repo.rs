@@ -304,6 +304,17 @@ async fn invite_code_taken(
 
 /// Creates a community entered by hand.
 pub async fn create_manual(pool: &SqlitePool, input: &CommunityInput) -> AppResult<Community> {
+    create_from_source(pool, input, "Manual entry", None, None).await
+}
+
+/// Creates a community attributed to a given source (manual entry or CSV import).
+pub async fn create_from_source(
+    pool: &SqlitePool,
+    input: &CommunityInput,
+    source_name: &str,
+    external_id: Option<&str>,
+    listing_url: Option<&str>,
+) -> AppResult<Community> {
     let name = validate::required_text(&input.name, "Name", validate::MAX_NAME)
         .map_err(AppError::bad_request)?;
     let description = validate::optional_text(
@@ -375,7 +386,7 @@ pub async fn create_manual(pool: &SqlitePool, input: &CommunityInput) -> AppResu
             id, name, description, invite_url, invite_code, canonical_url, primary_source,
             tags, language, relevance_score, score_breakdown, review_status, promotion_policy,
             policy_evidence, policy_checked_at, channel_name, user_notes, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 'Manual entry', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&name)
@@ -383,6 +394,7 @@ pub async fn create_manual(pool: &SqlitePool, input: &CommunityInput) -> AppResu
     .bind(&invite_url)
     .bind(&invite_code)
     .bind(&canonical_url)
+    .bind(source_name)
     .bind(serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into()))
     .bind(&language)
     .bind(score.total)
@@ -405,14 +417,35 @@ pub async fn create_manual(pool: &SqlitePool, input: &CommunityInput) -> AppResu
     insert_provenance(
         pool,
         &id,
-        "Manual entry",
-        None,
-        input.canonical_url.as_deref(),
+        source_name,
+        external_id,
+        listing_url.or(canonical_url.as_deref()),
         &timestamp,
     )
     .await?;
 
     get(pool, &id).await
+}
+
+/// Looks up existing communities by invite code.
+///
+/// Returns `(invite_code, community_id, name)` for each code that already exists.
+pub async fn find_by_invite_codes(
+    pool: &SqlitePool,
+    codes: &[String],
+) -> AppResult<Vec<(String, String, String)>> {
+    let mut found = Vec::new();
+    for code in codes {
+        let row: Option<(String, String)> =
+            sqlx::query_as("SELECT id, name FROM communities WHERE invite_code = ?")
+                .bind(code)
+                .fetch_optional(pool)
+                .await?;
+        if let Some((id, name)) = row {
+            found.push((code.clone(), id, name));
+        }
+    }
+    Ok(found)
 }
 
 /// Inserts or refreshes one provenance reference.
