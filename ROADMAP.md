@@ -12,7 +12,7 @@ done when its code is committed, builds, and its tests pass.
 | 4 | Relevance scoring and review workflow | done |
 | 5 | Verified public discovery connector (Awesome Discord Communities) | done — enabled with an in-memory cache; other directories rejected in the audit |
 | 6 | Message generator | done — deterministic templates with disclosure and forbidden-claim tests |
-| 7 | Polish, security, usability | in progress |
+| 7 | Polish, security, usability | done — responsive light UI, accessible dialogs, Lighthouse 100/100/100 |
 | 8 | Deployment readiness and final verification | planned |
 
 ## Known constraints recorded up front

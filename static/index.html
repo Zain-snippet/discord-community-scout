@@ -6,12 +6,13 @@
     <title>Discord Community Scout</title>
     <meta
       name="description"
-      content="Research publicly listed Discord communities and prepare outreach drafts for your own review."
+      content="Research publicly listed Discord communities, record what their rules allow, and prepare an outreach draft you review and post yourself."
     />
+    <meta name="color-scheme" content="light" />
     <link rel="stylesheet" href="/styles.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6fed'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23fff'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23fff'/%3E%3C/svg%3E"
     />
   </head>
   <body>
@@ -25,9 +26,11 @@
         </div>
         <nav aria-label="Main">
           <ul class="nav">
-            <li>
-              <a href="#overview" class="nav-link" data-view="overview" aria-current="page">Overview</a>
-            </li>
+            <li><button class="nav-link" data-view="overview" aria-current="page"><span class="nav-dot" aria-hidden="true"></span>Overview</button></li>
+            <li><button class="nav-link" data-view="discover"><span class="nav-dot" aria-hidden="true"></span>Discover</button></li>
+            <li><button class="nav-link" data-view="communities"><span class="nav-dot" aria-hidden="true"></span>Communities</button></li>
+            <li><button class="nav-link" data-view="drafts"><span class="nav-dot" aria-hidden="true"></span>Outreach&nbsp;Drafts</button></li>
+            <li><button class="nav-link" data-view="about"><span class="nav-dot" aria-hidden="true"></span>Settings&nbsp;/&nbsp;About</button></li>
           </ul>
         </nav>
         <p class="sidebar-note">
@@ -36,35 +39,461 @@
       </aside>
 
       <main id="main" class="content">
-        <header class="page-head">
-          <h1>Overview</h1>
-          <p class="lede">
-            Find publicly listed Discord communities, record what you learn about them, and draft a
-            message you can review and post yourself.
-          </p>
-        </header>
+        <p id="global-status" class="banner banner-info" hidden role="status" aria-live="polite"></p>
 
-        <section id="status-panel" class="card" aria-labelledby="status-heading">
-          <h2 id="status-heading">System status</h2>
-          <p id="status-line" class="muted">Checking the server…</p>
-          <dl class="facts" id="status-facts"></dl>
+        <!-- ============================================================ OVERVIEW -->
+        <section class="view" id="view-overview" aria-labelledby="overview-title">
+          <header class="page-head">
+            <h1 id="overview-title">Overview</h1>
+            <p class="lede">
+              Find publicly listed Discord communities, record what you learn about them, and draft a
+              message you review and post yourself.
+            </p>
+          </header>
+
+          <div class="stat-grid" id="stat-grid"></div>
+
+          <div class="card">
+            <div class="row-between">
+              <h2>Latest activity</h2>
+              <button class="btn btn-sm" id="refresh-dashboard" type="button">Refresh</button>
+            </div>
+            <p id="last-activity" class="muted">Loadingâ€¦</p>
+          </div>
+
+          <div class="card">
+            <h2>Getting started</h2>
+            <ol class="plain">
+              <li>Search a permitted public source on <strong>Discover</strong>, or add a community by hand.</li>
+              <li>Import a CSV of listings on <strong>Communities</strong> and review the preview before saving.</li>
+              <li>Open a community, read its rules, and record whether promotion is allowed, prohibited or unknown.</li>
+              <li>Generate a tailored draft for a suitable community, review it, and post it yourself if allowed.</li>
+            </ol>
+            <div class="row mt">
+              <button class="btn btn-primary" data-goto="discover" type="button">Discover communities</button>
+              <button class="btn" data-goto="communities" type="button">Manage communities</button>
+              <button class="btn" data-goto="drafts" type="button">Draft a message</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Rules that protect you</h2>
+            <ul class="plain">
+              <li>Nothing here joins servers, sends DMs or posts messages. Drafts are text you copy yourself.</li>
+              <li>A community that prohibits promotion is flagged unsuitable with no override.</li>
+              <li>Unknown rules are shown as <em>not verified</em>, never as permission.</li>
+            </ul>
+          </div>
         </section>
 
-        <section class="card" aria-labelledby="start-heading">
-          <h2 id="start-heading">Getting started</h2>
-          <ol class="steps">
-            <li>Add a community you already know, by hand.</li>
-            <li>Or import a CSV of listings and review the preview before saving.</li>
-            <li>Score and review each community, then draft a message tailored to it.</li>
-          </ol>
-          <p class="muted">
-            Discovery through public directories is limited to sources whose terms actually permit
-            automated access. See <code>docs/data-sources.md</code> for the audit.
-          </p>
+        <!-- ============================================================= DISCOVER -->
+        <section class="view" id="view-discover" aria-labelledby="discover-title" hidden>
+          <header class="page-head">
+            <h1 id="discover-title">Discover</h1>
+            <p class="lede">
+              Search public community lists whose terms permit automated access. Results are scored
+              against your search and saved with their source.
+            </p>
+          </header>
+
+          <div class="card">
+            <form id="discover-form" novalidate>
+              <div class="toolbar">
+                <div class="field" style="flex: 2 1 280px">
+                  <label for="discover-query">Topics or keywords</label>
+                  <input id="discover-query" name="query" type="search" placeholder="e.g. rust, game development, mathematics" maxlength="200" required />
+                  <span class="hint">Separate ideas with spaces. Matching is on the source's listing text.</span>
+                </div>
+                <div class="field narrow">
+                  <label for="discover-limit">Result limit</label>
+                  <select id="discover-limit" name="limit">
+                    <option value="10" selected>10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                  </select>
+                </div>
+                <div class="field auto">
+                  <button class="btn btn-primary" id="discover-submit" type="submit">Search</button>
+                </div>
+              </div>
+            </form>
+            <div id="discover-status" role="status" aria-live="polite"></div>
+            <div id="discover-results"></div>
+          </div>
+
+          <div class="card">
+            <div class="row-between">
+              <h2>Source availability</h2>
+              <button class="btn btn-sm" id="refresh-sources" type="button">Refresh</button>
+            </div>
+            <p class="muted small">
+              Only sources whose current terms and access permit automated querying are enabled.
+              Rejected sources are listed so you can see why search does not cover them.
+            </p>
+            <div id="source-list"></div>
+          </div>
+
+          <div class="card">
+            <h2>Recent discovery runs</h2>
+            <div id="run-list"></div>
+          </div>
+        </section>
+
+        <!-- ========================================================== COMMUNITIES -->
+        <section class="view" id="view-communities" aria-labelledby="communities-title" hidden>
+          <header class="page-head">
+            <h1 id="communities-title">Communities</h1>
+            <p class="lede">
+              Every saved community, whether discovered, imported or entered by hand. Review each one
+              before drafting outreach.
+            </p>
+          </header>
+
+          <div class="card">
+            <form id="filter-form" class="toolbar" aria-label="Filter communities">
+              <div class="field" style="flex: 2 1 220px">
+                <label for="filter-q">Search</label>
+                <input id="filter-q" name="q" type="search" placeholder="Name, description or tag" />
+              </div>
+              <div class="field narrow">
+                <label for="filter-status">Status</label>
+                <select id="filter-status" name="status">
+                  <option value="">Any status</option>
+                </select>
+              </div>
+              <div class="field narrow">
+                <label for="filter-source">Source</label>
+                <select id="filter-source" name="source">
+                  <option value="">Any source</option>
+                </select>
+              </div>
+              <div class="field narrow">
+                <label for="filter-tag">Tag</label>
+                <select id="filter-tag" name="tag">
+                  <option value="">Any tag</option>
+                </select>
+              </div>
+              <div class="field narrow">
+                <label for="filter-sort">Sort</label>
+                <select id="filter-sort" name="sort">
+                  <option value="relevance">Relevance</option>
+                  <option value="name">Name</option>
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                </select>
+              </div>
+              <div class="field auto">
+                <label for="filter-outreach">Outreach shortlist</label>
+                <label class="small" style="display:flex;align-items:center;gap:.4rem;font-weight:400">
+                  <input id="filter-outreach" name="outreach_only" type="checkbox" />
+                  Hide prohibited
+                </label>
+              </div>
+            </form>
+            <div class="row" style="margin-bottom:.9rem">
+              <button class="btn btn-primary btn-sm" id="open-add" type="button">Add community</button>
+              <button class="btn btn-sm" id="open-import" type="button">Import CSV</button>
+              <a class="btn btn-sm" href="/api/csv/export" download="communities.csv">Export CSV</a>
+              <button class="btn btn-sm btn-ghost" id="reset-filters" type="button">Reset filters</button>
+            </div>
+
+            <div id="communities-status" role="status" aria-live="polite"></div>
+            <div id="communities-table"></div>
+            <div class="pagination" id="communities-pagination"></div>
+          </div>
+        </section>
+
+        <!-- =============================================================== DRAFTS -->
+        <section class="view" id="view-drafts" aria-labelledby="drafts-title" hidden>
+          <header class="page-head">
+            <h1 id="drafts-title">Outreach drafts</h1>
+            <p class="lede">
+              Build a draft from a saved community's verified context. Read it, edit it, copy it, and
+              post it yourself only where the rules allow.
+            </p>
+          </header>
+
+          <div class="card">
+            <form id="draft-form">
+              <div class="form-grid">
+                <div class="field full">
+                  <label for="draft-community">Community</label>
+                  <select id="draft-community" name="community_id" required></select>
+                  <span class="hint" id="draft-community-hint">Only communities whose rules are not prohibited are listed.</span>
+                </div>
+                <div class="field">
+                  <label for="draft-tone">Tone</label>
+                  <select id="draft-tone" name="tone">
+                    <option value="conversational" selected>Conversational</option>
+                    <option value="direct">Direct</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="draft-variant">Length</label>
+                  <select id="draft-variant" name="variant">
+                    <option value="concise" selected>Concise (recommended)</option>
+                    <option value="long">Longer</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="draft-notes">Extra context for this community (optional)</label>
+                  <textarea id="draft-notes" name="notes" rows="2" placeholder="e.g. mention I'm active in the #introductions channel."></textarea>
+                  <span class="hint">Appended as a clearly marked reference note. It never changes the factual claims.</span>
+                </div>
+              </div>
+              <div class="row mt">
+                <button class="btn btn-primary" id="draft-generate" type="submit">Generate draft</button>
+                <button class="btn" id="draft-regenerate" type="button" disabled>Regenerate</button>
+              </div>
+            </form>
+          </div>
+
+          <div id="draft-output" hidden>
+            <div id="draft-warnings"></div>
+
+            <div class="card">
+              <div class="row-between">
+                <h2 id="draft-heading">Draft</h2>
+                <div class="row">
+                  <button class="btn btn-sm" id="draft-swap" type="button">Use the other length</button>
+                  <button class="btn btn-primary btn-sm" id="draft-copy" type="button">Copy draft</button>
+                </div>
+              </div>
+              <label for="draft-text" class="muted small">You can edit the text before copying.</label>
+              <textarea id="draft-text" rows="12"></textarea>
+              <div class="mt">
+                <h3>Facts this draft discloses</h3>
+                <ul class="plain small" id="draft-disclosures"></ul>
+                <p class="small muted mb0">
+                  There is no send button. Copy the text and post it yourself only if the community
+                  allows it.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================ ABOUT -->
+        <section class="view" id="view-about" aria-labelledby="about-title" hidden>
+          <header class="page-head">
+            <h1 id="about-title">Settings and about</h1>
+            <p class="lede">What this app does, what it deliberately refuses to do, and where its data comes from.</p>
+          </header>
+
+          <div class="card">
+            <h2>Is the opportunity verified?</h2>
+            <p class="small mb0">
+              No. This app never labels the opportunity as verified, salaried, endorsed or risk-free.
+              The drafts state the facts you supplied and nothing more. Whether to pursue or post is
+              your decision.
+            </p>
+          </div>
+
+          <div class="card">
+            <h2>Facts used in every draft</h2>
+            <dl class="facts">
+              <dt>Work type</dt><dd>Remote</dd>
+              <dt>Pay</dt><dd>Commission-based (not a salary)</dd>
+              <dt>Initial deposit</dt><dd>$12</dd>
+              <dt>Recovery</dt><dd>After the first payment, subject to the company's terms</dd>
+              <dt>Invitation</dt><dd>Interested people can ask for details</dd>
+            </dl>
+          </div>
+
+          <div class="card">
+            <h2>Data sources and status</h2>
+            <p class="muted small">
+              Audited on 16 November 2026. Only sources that permit automated access are integrated.
+            </p>
+            <div id="about-sources"></div>
+          </div>
+
+          <div class="card">
+            <h2>What this app will not do</h2>
+            <ul class="plain">
+              <li>Automate a Discord account, self-bot, join, verify, DM, react or post.</li>
+              <li>Scrape Discord or any directory that blocks automated access.</li>
+              <li>Invent channel names, rules, member counts, earnings or testimonials.</li>
+              <li>Treat unknown rules as permission, or offer a â€œpost anywayâ€ override.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h2>Cost</h2>
+            <p class="small mb0">
+              No paid API, subscription or service is used. The database is a local SQLite file.
+              The discovery source is free and CC-BY-4.0 licensed with attribution.
+            </p>
+          </div>
+
+          <div class="card">
+            <h2>Health</h2>
+            <p id="about-health" class="muted small">Checkingâ€¦</p>
+          </div>
         </section>
       </main>
     </div>
 
+    <!-- =========================================================== COMMUNITY DIALOG -->
+    <dialog id="community-dialog" aria-labelledby="community-dialog-title">
+      <form id="community-form" method="dialog">
+        <div class="dialog-head">
+          <h2 id="community-dialog-title">Add community</h2>
+          <button class="close-x" type="button" data-close="community-dialog" aria-label="Close">Ã—</button>
+        </div>
+        <div class="dialog-body">
+          <div id="community-form-error"></div>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="cf-name">Name <span aria-hidden="true">*</span></label>
+              <input id="cf-name" name="name" type="text" maxlength="200" required />
+            </div>
+            <div class="field full">
+              <label for="cf-description">Description</label>
+              <textarea id="cf-description" name="description" rows="2" maxlength="2000"></textarea>
+            </div>
+            <div class="field">
+              <label for="cf-invite">Public invite URL</label>
+              <input id="cf-invite" name="invite_url" type="url" placeholder="https://discord.gg/â€¦" />
+              <span class="hint">Only http/https. Discord invites are normalised for de-duplication.</span>
+            </div>
+            <div class="field">
+              <label for="cf-canonical">Listing / source URL</label>
+              <input id="cf-canonical" name="canonical_url" type="url" />
+            </div>
+            <div class="field">
+              <label for="cf-tags">Tags</label>
+              <input id="cf-tags" name="tags" type="text" placeholder="students, side hustle" />
+              <span class="hint">Comma-separated, up to 12.</span>
+            </div>
+            <div class="field">
+              <label for="cf-language">Language</label>
+              <input id="cf-language" name="language" type="text" maxlength="60" />
+            </div>
+            <div class="field">
+              <label for="cf-policy">Promotion policy</label>
+              <select id="cf-policy" name="promotion_policy">
+                <option value="unknown" selected>Unknown / not verified</option>
+                <option value="allowed">Allowed</option>
+                <option value="prohibited">Prohibited</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="cf-channel">Relevant channel (only if verified)</label>
+              <input id="cf-channel" name="channel_name" type="text" maxlength="100" placeholder="e.g. #opportunities" />
+            </div>
+            <div class="field full">
+              <label for="cf-evidence">Quoted rule or evidence</label>
+              <textarea id="cf-evidence" name="policy_evidence" rows="2" maxlength="2000" placeholder="Paste the rule text you actually read."></textarea>
+            </div>
+            <div class="field full">
+              <label for="cf-notes">Your notes</label>
+              <textarea id="cf-notes" name="user_notes" rows="2" maxlength="5000"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn" type="button" data-close="community-dialog">Cancel</button>
+          <button class="btn btn-primary" id="community-save" type="submit">Save community</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- ============================================================== REVIEW DIALOG -->
+    <dialog id="review-dialog" class="dialog-wide" aria-labelledby="review-dialog-title">
+      <form id="review-form" method="dialog">
+        <div class="dialog-head">
+          <h2 id="review-dialog-title">Review community</h2>
+          <button class="close-x" type="button" data-close="review-dialog" aria-label="Close">Ã—</button>
+        </div>
+        <div class="dialog-body">
+          <div id="review-summary"></div>
+          <div id="review-warnings"></div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="rf-status">Review status</label>
+              <select id="rf-status" name="review_status">
+                <option value="not_reviewed">Not reviewed</option>
+                <option value="suitable">Suitable</option>
+                <option value="unsuitable">Unsuitable</option>
+                <option value="needs_manual_check">Needs manual check</option>
+                <option value="contacted">Contacted / posted</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="rf-policy">Promotion policy</label>
+              <select id="rf-policy" name="promotion_policy">
+                <option value="unknown">Unknown / not verified</option>
+                <option value="allowed">Allowed</option>
+                <option value="prohibited">Prohibited</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="rf-channel">Relevant channel (verified or manual only)</label>
+              <input id="rf-channel" name="channel_name" type="text" maxlength="100" />
+            </div>
+            <div class="field">
+              <label for="rf-contacted">Mark as contacted / posted</label>
+              <label class="small" style="display:flex;align-items:center;gap:.4rem;font-weight:400">
+                <input id="rf-contacted" name="contacted" type="checkbox" />
+                I have contacted this community
+              </label>
+            </div>
+            <div class="field full">
+              <label for="rf-evidence">Quoted rule or evidence</label>
+              <textarea id="rf-evidence" name="policy_evidence" rows="2" maxlength="2000"></textarea>
+            </div>
+            <div class="field full">
+              <label for="rf-notes">Your notes</label>
+              <textarea id="rf-notes" name="user_notes" rows="2" maxlength="5000"></textarea>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <h3>Score breakdown</h3>
+          <p class="muted small" id="review-score-line"></p>
+          <ul class="breakdown-list" id="review-breakdown"></ul>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn btn-danger" id="review-delete" type="button">Delete</button>
+          <span style="flex:1"></span>
+          <button class="btn" type="button" data-close="review-dialog">Cancel</button>
+          <button class="btn btn-primary" type="submit">Save review</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- ============================================================== IMPORT DIALOG -->
+    <dialog id="import-dialog" class="dialog-wide" aria-labelledby="import-dialog-title">
+      <div class="dialog-head">
+        <h2 id="import-dialog-title">Import CSV</h2>
+        <button class="close-x" type="button" data-close="import-dialog" aria-label="Close">Ã—</button>
+      </div>
+      <div class="dialog-body">
+        <p class="small muted">
+          The first row must contain a <code>name</code> column. Nothing is saved until you commit the
+          preview. Imported rows are labelled <strong>CSV import</strong>.
+        </p>
+        <div class="field">
+          <label for="import-file">Choose a CSV file</label>
+          <input id="import-file" type="file" accept=".csv,text/csv" />
+        </div>
+        <div class="field mt">
+          <label for="import-text">Or paste CSV text</label>
+          <textarea id="import-text" rows="7" spellcheck="false" placeholder="name,description,invite_url,tags,..."></textarea>
+        </div>
+        <div class="row mt">
+          <button class="btn" id="import-preview" type="button">Preview</button>
+          <button class="btn btn-primary" id="import-commit" type="button" disabled>Import valid rows</button>
+        </div>
+        <div id="import-result" class="mt" role="status" aria-live="polite"></div>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn" type="button" data-close="import-dialog">Close</button>
+      </div>
+    </dialog>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
     <script type="module" src="/app.js"></script>
-  </body>
+</body>
 </html>

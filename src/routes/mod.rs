@@ -60,9 +60,29 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .nest("/api", api_router())
+        // Served explicitly so crawlers get a real robots file instead of the SPA
+        // fallback. The UI is public; the JSON API is not meant for indexing.
+        .route(
+            "/robots.txt",
+            get(|| async {
+                (
+                    [(
+                        axum::http::header::CONTENT_TYPE,
+                        "text/plain; charset=utf-8",
+                    )],
+                    "User-agent: *\nDisallow: /api/\n",
+                )
+            }),
+        )
         .fallback_service(static_files)
         .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
         .layer(CompressionLayer::new())
+        // The UI has no build step, so a stale cached app.js would silently run
+        // old code. Revalidation keeps clients current at negligible cost.
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-cache"),
+        ))
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::header::X_CONTENT_TYPE_OPTIONS,
             axum::http::HeaderValue::from_static("nosniff"),
