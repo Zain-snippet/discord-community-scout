@@ -1,7 +1,7 @@
 # Discord Community Scout - local/self-host container image.
 # No paid services. SQLite is stored in /app/data (mount a volume to persist it).
 
-FROM rust:1.82-bookworm AS builder
+FROM rust:1.100-bookworm AS builder
 WORKDIR /app
 
 # Cache dependency compilation on a stub binary.

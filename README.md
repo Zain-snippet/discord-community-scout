@@ -26,7 +26,8 @@ See [`ROADMAP.md`](ROADMAP.md) for the milestone table.
 
 ## Requirements
 
-- Rust **1.82+** (developed on 1.100).
+- Rust **1.89+** (the locked dependency graph requires 1.89; built and tested
+  with 1.100, which is also the version pinned in the `Dockerfile`).
 - On Windows, the MSVC or GNU toolchain both work. With `*-windows-gnu` you need
   MinGW-w64 (`gcc`) on `PATH`; with `*-windows-msvc` you need the Visual C++
   build tools.
