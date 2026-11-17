@@ -19,7 +19,7 @@ message, or automates a Discord account.
 | Discovery connector | done — only the permitted CC-BY-4.0 source enabled; others rejected/unavailable |
 | Message drafts | done — deterministic templates, no AI/key, all required disclosures + forbidden-claim guard |
 | UI polish/accessibility | done — responsive SPA, Lighthouse 100/100/100 (accessibility/best practices/SEO) on overview |
-| Deployment packaging | done — Oracle Cloud Always Free VM, Docker Compose, Caddy HTTPS + Basic Auth, backups/restore scripts, DuckDNS updater |
+| Deployment packaging | done — Oracle Cloud Always Free VM, Docker Compose, Caddy HTTPS + Basic Auth, backups/restore scripts, DuckDNS updater; ARM64 image and SQLite persistence verified in CI |
 | Live deployment | **not deployed** — no Oracle account/VM/URL yet; step-by-step guide in [`docs/deployment.md`](docs/deployment.md) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the milestone table.
@@ -129,10 +129,13 @@ SCOUT_PASSWORD='...' ./scripts/verify-deployment.sh https://<host> <user> --full
 no live instance is claimed. [`docs/deployment.md`](docs/deployment.md) contains
 the complete Windows/PowerShell account and VM setup, cost safeguards (Always
 Free only, idle-reclamation policy, trial credits vs Always Free), firewall
-rules, backup verification, restore test and VM-loss recovery procedures. The
-Compose file and Caddyfile were validated locally with Compose v2.29.7 and
-Caddy 2.8.4; a live ARM64 build, certificate issuance and restore test remain
-to be performed after the VM exists.
+rules, backup verification, restore test and VM-loss recovery procedures.
+
+Already verified in CI on a native ARM64 runner (`ubuntu-24.04-arm`): the
+production `Dockerfile` builds for arm64, the container answers `/api/health`,
+a created record survives `docker restart`, and the deployment scripts/Caddyfile
+pass validation (Compose v2.29.7, Caddy 2.8.4). Certificate issuance and a real
+backup/restore test still require the VM and are not claimed.
 
 ## Licence
 

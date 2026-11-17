@@ -122,7 +122,8 @@ can explain the number instead of just showing it.
 
 The app is a single binary plus a SQLite file. A `Dockerfile` builds it with the
 GNU toolchain for the host architecture (amd64 locally, arm64 on the Oracle
-Ampere VM).
+Ampere VM). CI builds and runs that image on a native ARM64 runner and verifies
+that a record survives a container restart.
 
 The packaged deployment (`deploy/`) runs two containers on a private Docker
 network:

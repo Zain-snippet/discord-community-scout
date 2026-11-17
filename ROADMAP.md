@@ -14,7 +14,7 @@ committed, builds, and its tests pass.
 | 6 | Message generator | done — deterministic templates with disclosure and forbidden-claim tests |
 | 7 | Polish, security, usability | done — responsive light UI, accessible dialogs, Lighthouse 100/100/100 |
 | 8 | Deployment readiness and final verification | done — Dockerfile, `.dockerignore`, `docs/deployment.md`, README updated |
-| 9 | Oracle Cloud Always Free deployment packaging | done — `deploy/` compose + Caddyfile + env template, `scripts/` install/deploy/backup/restore/verify, HTTPS + bcrypt Basic Auth, firewall, DuckDNS updater, backup timer; Compose v2.29.7 and Caddy 2.8.4 validation passed |
+| 9 | Oracle Cloud Always Free deployment packaging | done — `deploy/` compose + Caddyfile + env template, `scripts/` install/deploy/backup/restore/verify, HTTPS + bcrypt Basic Auth, firewall, DuckDNS updater, backup timer; Compose v2.29.7 and Caddy 2.8.4 validation passed; production image built and smoke-tested on a native ARM64 runner |
 | 10 | Live deployment and restore proof | **blocked** — needs an Oracle Cloud account/VM and DuckDNS hostname owned by the user; no public URL exists yet |
 
 ## Deployment status (milestone 10)
@@ -27,6 +27,7 @@ Prepared and statically validated, **not live**:
 - [x] Backup + verify + restore scripts and a daily systemd timer
 - [x] Oracle Always Free limits, idle reclamation and trial-vs-free documented
 - [x] `docker compose config` (both profiles) and `caddy validate` pass
+- [x] Production `Dockerfile` builds for ARM64 and a record survives a container restart (CI, `ubuntu-24.04-arm`)
 - [ ] Oracle account, Always Free A1 VM, Security List rules
 - [ ] DuckDNS hostname pointing at the VM
 - [ ] Live HTTPS certificate issued

@@ -12,11 +12,12 @@ What *has* been checked in the repository (2026-11-17):
 | `docker compose config` (Compose v2.29.7) with a real `deploy/.env` | pass, default and `duckdns` profiles |
 | `caddy validate` (Caddy 2.8.4) on `deploy/Caddyfile` | pass |
 | App build/test/clippy/fmt/release build | pass (see README) |
+| ARM64 image build + runtime smoke test on GitHub's `ubuntu-24.04-arm` | pass — container starts, `/api/health` returns ok, a created record survives `docker restart` with a named `/app/data` volume |
 
-What has **not** been run: an ARM64 container build, a real VM, DNS, certificate
-issuance, HTTPS access, backup/restore against a live volume. Do not treat the
-deployment as complete until the verification steps in section 11 and the
-restore test in section 12 have actually succeeded.
+What has **not** been run: a real VM, DNS, certificate issuance, HTTPS access,
+backup/restore against a live volume. Do not treat the deployment as complete
+until the verification steps in section 11 and the restore test in section 12
+have actually succeeded.
 
 ---
 
