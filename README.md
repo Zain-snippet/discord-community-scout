@@ -19,7 +19,8 @@ message, or automates a Discord account.
 | Discovery connector | done — only the permitted CC-BY-4.0 source enabled; others rejected/unavailable |
 | Message drafts | done — deterministic templates, no AI/key, all required disclosures + forbidden-claim guard |
 | UI polish/accessibility | done — responsive SPA, Lighthouse 100/100/100 (accessibility/best practices/SEO) on overview |
-| Deployment | **not deployed** — readiness notes in [`docs/deployment.md`](docs/deployment.md) |
+| Deployment packaging | done — Oracle Cloud Always Free VM, Docker Compose, Caddy HTTPS + Basic Auth, backups/restore scripts, DuckDNS updater |
+| Live deployment | **not deployed** — no Oracle account/VM/URL yet; step-by-step guide in [`docs/deployment.md`](docs/deployment.md) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the milestone table.
 
@@ -64,6 +65,11 @@ Migrations are applied at boot.
 Invalid configuration is reported at startup with a clear message rather than a
 panic.
 
+Deployment adds a second env file, `deploy/.env` (template:
+`deploy/.env.example`), for the public hostname, ACME email, Basic Auth
+username/bcrypt hash, optional DuckDNS updater and backup settings. It is
+git-ignored - never commit it.
+
 ## Develop
 
 ```bash
@@ -72,8 +78,9 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-CI runs the same checks plus a health-endpoint smoke test
-(`.github/workflows/ci.yml`).
+CI runs the same checks plus a health-endpoint smoke test, `bash -n` on the
+deployment scripts, `docker compose config` for both profiles, and
+`caddy validate` (`.github/workflows/ci.yml`).
 
 ## API
 
@@ -102,7 +109,29 @@ primary way to work with other audiences.**
 
 ## Deployment
 
-**Not deployed.** Build/run locally or via the included `Dockerfile`; see [`docs/deployment.md`](docs/deployment.md) for readiness notes, health checks, and the (unverified) caveats around free-tier hosting and SQLite persistence.
+The deployment target is an **Oracle Cloud Always Free** ARM64 Ubuntu VM, with
+Docker Compose, Caddy as the TLS-terminating reverse proxy, and DuckDNS for a
+free hostname. The whole app - static files and API - is protected by Caddy
+**Basic Authentication** using a bcrypt hash. Only ports 80/443 are public (plus
+restricted SSH); the app port is never published. SQLite lives in a named
+volume at `/app/data`, and daily backup/restore scripts are included.
+
+```bash
+# on the VM, after cloning the repo
+sudo ./scripts/install-vm.sh
+cp deploy/.env.example deploy/.env && chmod 600 deploy/.env   # edit it first
+./scripts/deploy.sh --with-duckdns                            # or without the flag
+SCOUT_PASSWORD='...' ./scripts/verify-deployment.sh https://<host> <user> --full
+```
+
+**Not deployed yet**: no Oracle account, VM, hostname or public URL exists, so
+no live instance is claimed. [`docs/deployment.md`](docs/deployment.md) contains
+the complete Windows/PowerShell account and VM setup, cost safeguards (Always
+Free only, idle-reclamation policy, trial credits vs Always Free), firewall
+rules, backup verification, restore test and VM-loss recovery procedures. The
+Compose file and Caddyfile were validated locally with Compose v2.29.7 and
+Caddy 2.8.4; a live ARM64 build, certificate issuance and restore test remain
+to be performed after the VM exists.
 
 ## Licence
 

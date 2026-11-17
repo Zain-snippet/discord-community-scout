@@ -121,8 +121,24 @@ can explain the number instead of just showing it.
 ## Deployment
 
 The app is a single binary plus a SQLite file. A `Dockerfile` builds it with the
-GNU toolchain. Durable storage is the constraint: any host that resets the
-container filesystem loses the database, so a provider offering a persistent
-volume (or a single always-on VM) is required. Free-tier provider terms change
-frequently and were **not** verifiable in this environment (no web search
-available), so no provider is claimed as verified; see `docs/deployment.md`.
+GNU toolchain for the host architecture (amd64 locally, arm64 on the Oracle
+Ampere VM).
+
+The packaged deployment (`deploy/`) runs two containers on a private Docker
+network:
+
+- `caddy` publishes 80/443, terminates TLS with automatic certificates, applies
+  HSTS and other headers, and requires **Basic Auth** (bcrypt hash) for every
+  request. The admin API is disabled.
+- `app` binds `0.0.0.0:8080` only inside that network. It has no published port,
+  so the API cannot be reached without passing through Caddy's auth.
+
+SQLite lives in the named volume `discord-community-scout_app_data` mounted at
+`/app/data`; Caddy certificate state lives in `caddy_data`/`caddy_config`.
+`scripts/backup-db.sh` uses SQLite's backup API and verifies each copy, and
+`scripts/restore-db.sh` swaps in a verified backup with rollback on failure.
+
+Hosting is **Oracle Cloud Always Free only** (one Ampere A1 VM inside the 4
+OCPU/24 GB allowance, no load balancer, no managed database). The account, VM
+and DNS record are not created yet; see `docs/deployment.md` for the procedure,
+cost safeguards and the outstanding live checks.

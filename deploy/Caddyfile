@@ -1,0 +1,48 @@
+# Discord Community Scout - Caddy reverse proxy with Basic Authentication.
+#
+# Everything below is driven by environment variables from deploy/.env
+# (template: deploy/.env.example):
+#
+#   SITE_ADDRESS      public hostname only, e.g. scout-example.duckdns.org
+#   ACME_EMAIL        contact address for the ACME (Let's Encrypt) account
+#   BASIC_AUTH_USER   Basic Auth username
+#   BASIC_AUTH_HASH   bcrypt hash of the password - never the password itself
+#
+# Caddy obtains and renews the TLS certificate automatically for
+# SITE_ADDRESS, and redirects http:// to https:// for the same hostname.
+# The Rust app is only reachable as app:8080 on the internal Docker network.
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Protect the entire application: static assets and /api/* alike.
+	# The hash is bcrypt; Caddy never sees the plaintext password.
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	reverse_proxy app:8080 {
+		health_uri /api/health
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

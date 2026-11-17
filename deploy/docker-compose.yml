@@ -1,0 +1,109 @@
+# Production compose for Discord Community Scout.
+#
+#   app        Rust/Axum + SQLite, no published ports (internal network only)
+#   caddy      TLS termination + Basic Auth, publishes 80/443 only
+#   duckdns    optional DNS updater, enabled with `--profile duckdns`
+#
+# Usage (always pass the env file so values come from deploy/.env):
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
+#
+# The helper scripts do this for you: ./scripts/deploy.sh
+
+name: discord-community-scout
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: discord-community-scout:local
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "sqlite:///app/data/scout.db?mode=rwc"
+      RUST_LOG: ${RUST_LOG:-info,tower_http=info}
+      SCOUT_CACHE_TTL_SECS: ${SCOUT_CACHE_TTL_SECS:-3600}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - app_data:/app/data
+    networks:
+      - internal
+    # No `ports:` on purpose. The app is reachable only from Caddy.
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?set BASIC_AUTH_USER in deploy/.env}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?set BASIC_AUTH_HASH in deploy/.env}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  # Optional DuckDNS updater. Only started with the `duckdns` profile, and
+  # only needed when SITE_ADDRESS is a *.duckdns.org hostname.
+  duckdns:
+    image: curlimages/curl:8.10.1
+    profiles: ["duckdns"]
+    restart: unless-stopped
+    environment:
+      DUCKDNS_SUBDOMAIN: ${DUCKDNS_SUBDOMAIN:-}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+      TZ: ${TZ:-UTC}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$$DUCKDNS_SUBDOMAIN" ] || [ -z "$$DUCKDNS_TOKEN" ]; then
+          echo "duckdns: DUCKDNS_SUBDOMAIN and DUCKDNS_TOKEN must be set in deploy/.env" >&2
+          exit 1
+        fi
+        while true; do
+          if curl -fsS --max-time 30 "https://www.duckdns.org/update?domains=$$DUCKDNS_SUBDOMAIN&token=$$DUCKDNS_TOKEN&ip=" >/dev/null; then
+            echo "duckdns: update ok at $$(date -u +%FT%TZ)"
+          else
+            echo "duckdns: update failed at $$(date -u +%FT%TZ)" >&2
+          fi
+          sleep 300
+        done
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

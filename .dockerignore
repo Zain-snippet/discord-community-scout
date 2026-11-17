@@ -9,6 +9,8 @@ data
 .env.*
 !.env.example
 docs
+deploy
+scripts
 README.md
 ROADMAP.md
 Dockerfile

@@ -14,6 +14,13 @@
 .env.*
 !.env.example
 
+# Deployment secrets, local backups and encrypted copies
+deploy/.env
+deploy/backups/
+*.db.gz
+*.db.gz.age
+*.age
+
 # Editor / OS
 .vscode/
 .idea/
