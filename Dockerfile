@@ -1,27 +1,20 @@
-# Discord Community Scout - local/self-host container image.
+# Discord Community Scout - self-host container image.
 # No paid services. SQLite is stored in /app/data (mount a volume to persist it).
 
 FROM rust:1.100-bookworm AS builder
 WORKDIR /app
 
-# Cache dependency compilation on a stub binary.
+# Copy everything the build needs before compiling. This is deliberately
+# simple: an earlier "stub crate" dependency-cache trick shipped an empty
+# binary because Cargo's fingerprint is mtime-based and Docker COPY preserves
+# source mtimes, so the real build was skipped. BuildKit caches this layer,
+# so unchanged sources are still not rebuilt.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --locked || true
-
 COPY migrations ./migrations
 COPY static ./static
 COPY src ./src
-# Force a rebuild of the application crate. Deleting the stub binary is not
-# enough: Docker COPY preserves the source mtimes from the build context, which
-# can be older than the stub build's fingerprint, so Cargo would consider the
-# crate fresh and ship the empty stub binary (which exits immediately with no
-# output). Removing the crate's fingerprint and artifacts forces the real build
-# while keeping the compiled dependency graph cached.
-RUN rm -rf target/release/.fingerprint/discord-community-scout-* \
-           target/release/deps/discord_community_scout-* \
-           target/release/discord-community-scout* \
-    && cargo build --release --locked \
+
+RUN cargo build --release --locked \
     && test -x target/release/discord-community-scout
 
 FROM debian:bookworm-slim AS runtime
