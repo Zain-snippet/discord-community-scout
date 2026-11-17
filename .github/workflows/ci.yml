@@ -85,3 +85,70 @@ jobs:
             -e SITE_ADDRESS -e ACME_EMAIL -e BASIC_AUTH_USER -e BASIC_AUTH_HASH \
             -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2.8-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+  arm64-image:
+    name: arm64 image (Oracle VM target)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image for arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: discord-community-scout:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run it and prove SQLite persistence across a restart
+        run: |
+          mkdir -p ci-data
+          docker run -d --name scout-ci \
+            -e PORT=8080 \
+            -e 'DATABASE_URL=sqlite:///app/data/scout.db?mode=rwc' \
+            -v "$PWD/ci-data:/app/data" \
+            -p 8080:8080 \
+            discord-community-scout:ci
+
+          wait_for_health() {
+            for i in $(seq 1 60); do
+              if curl -fsS http://127.0.0.1:8080/api/health | grep -q '"status":"ok"'; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          if ! wait_for_health; then
+            echo "container did not become healthy"
+            docker logs scout-ci
+            docker rm -f scout-ci
+            exit 1
+          fi
+          echo "health endpoint OK"
+
+          curl -fsS -X POST http://127.0.0.1:8080/api/communities \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI persistence test","description":"created by CI","tags":["ci"]}' \
+            | grep -q '"name":"CI persistence test"'
+          echo "record created"
+
+          docker restart scout-ci
+          if ! wait_for_health; then
+            echo "container did not come back healthy"
+            docker logs scout-ci
+            docker rm -f scout-ci
+            exit 1
+          fi
+
+          curl -fsS 'http://127.0.0.1:8080/api/communities?q=CI%20persistence' \
+            | grep -q '"name":"CI persistence test"'
+          echo "record survived restart"
+
+          docker rm -f scout-ci
+          sudo rm -rf ci-data
