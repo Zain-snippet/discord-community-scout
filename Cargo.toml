@@ -8,7 +8,7 @@ license = "MIT"
 
 [dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace", "limit", "set-header", "compression-gzip"] }
 serde = { version = "1", features = ["derive"] }
@@ -28,6 +28,10 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 csv = "1"
 anyhow = "1"
+async-trait = "0.1"
+base64 = "0.22"
+rand = "0.8"
+sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "json",

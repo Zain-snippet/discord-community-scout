@@ -1,11 +1,13 @@
 //! Router assembly and shared extractors.
 
+pub mod auth;
 pub mod communities;
 pub mod csv;
 pub mod dashboard;
 pub mod discovery;
 pub mod health;
 pub mod messages;
+pub mod sync;
 
 use std::sync::Arc;
 
@@ -24,7 +26,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{config::Config, discovery::SourceCache, error::AppError};
+use crate::{
+    config::Config, discovery::SourceCache, error::AppError, google::GoogleService,
+    sync::engine::SyncEngine,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,6 +39,10 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// In-memory cache of fetched source documents.
     pub cache: SourceCache,
+    /// Google OAuth state and credentials.
+    pub google: Arc<GoogleService>,
+    /// Single-flight synchronization engine.
+    pub sync: Arc<SyncEngine>,
 }
 
 /// JSON extractor that reports failures through the same error envelope as the
@@ -122,4 +131,17 @@ fn api_router() -> Router<AppState> {
         .route("/sources", get(discovery::sources))
         .route("/discovery/runs", get(discovery::runs))
         .route("/discovery/search", post(discovery::search))
+        // Google sign-in and Drive synchronization.
+        .route("/auth/status", get(auth::status))
+        .route("/auth/google/start", get(auth::start))
+        .route("/auth/google/callback", get(auth::callback))
+        .route("/auth/logout", post(auth::logout))
+        .route("/sync/status", get(sync::status))
+        .route("/sync/run", post(sync::run))
+        .route("/sync/conflicts", get(sync::conflicts))
+        .route("/sync/conflicts/{id}/resolve", post(sync::resolve))
+        .route("/sync/migrate", post(sync::migrate))
+        .route("/sync/export", get(sync::export))
+        .route("/sync/snapshots", get(sync::snapshots))
+        .route("/sync/snapshots/{name}/restore", post(sync::restore))
 }
