@@ -20,6 +20,8 @@ message, or automates a Discord account.
 | Message drafts | done — deterministic templates, no AI/key, all required disclosures + forbidden-claim guard |
 | UI polish/accessibility | done — responsive SPA, Lighthouse 100/100/100 (accessibility/best practices/SEO) on overview |
 | Deployment packaging | done — Oracle Cloud Always Free VM, Docker Compose, Caddy HTTPS + Basic Auth, backups/restore scripts, DuckDNS updater; ARM64 image and SQLite persistence verified in CI |
+| Local-first Google Drive sync | done — opt-in OAuth (PKCE, `drive.appdata` only), Drive JSON workspace, SQLite cache, three-way field merge, conflict UI, snapshots/export/restore; Google is not contacted unless configured |
+| Real Google OAuth / cross-device sync | **not verified** — needs your Google Cloud project, OAuth client and account; see [`docs/google-drive-setup.md`](docs/google-drive-setup.md) |
 | Live deployment | **not deployed** — no Oracle account/VM/URL yet; step-by-step guide in [`docs/deployment.md`](docs/deployment.md) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the milestone table.
@@ -53,6 +55,7 @@ Migrations are applied at boot.
 - **CSV**: preview with per-row status/errors, commit valid rows (dedup/merge provenance), and export all saved communities.
 - **Drafts**: deterministic, copy-only message drafts (concise/long, tones) that always disclose remote commission-based work, the **$12 initial deposit**, and that it is **recoverable after your first payment, subject to the company's terms**, and invite questions. A runtime guard refuses drafts containing unsupported claims. Nothing is posted automatically.
 - **Fallback**: when discovery is unavailable, CSV import and manual entry remain fully usable.
+- **Optional sync**: Google sign-in stores one JSON workspace in your own Google Drive `appDataFolder` and keeps a SQLite cache on each device. Saves are local-first, sync is debounced and single-flight, and a three-way field merge never discards a change. Same-field clashes open a conflict you resolve in the UI; snapshots, export and restore are built in. Without `GOOGLE_CLIENT_ID` the app never contacts Google.
 
 ### Configuration
 
@@ -62,14 +65,37 @@ Migrations are applied at boot.
 | `DATABASE_URL` | `sqlite://data/scout.db?mode=rwc` | Must be a `sqlite:` URL |
 | `RUST_LOG` | `info` | Log filter |
 | `SCOUT_CACHE_TTL_SECS` | `3600` | Discovery response cache lifetime |
+| `SCOUT_DATA_DIR` | `data` | Tokens, snapshots and recovery copies |
+| `GOOGLE_CLIENT_ID` | unset | Enables Google Drive sync when set |
+| `GOOGLE_CLIENT_SECRET` | unset | OAuth client secret (server-side only) |
+| `SCOUT_PUBLIC_URL` | `http://127.0.0.1:<PORT>` | Base URL used to build the OAuth redirect |
 
-Invalid configuration is reported at startup with a clear message rather than a
-panic.
+`SCOUT_PUBLIC_URL` plus `/api/auth/google/callback` must exactly match a redirect
+URI registered in Google Cloud. Invalid configuration is reported at startup
+with a clear message rather than a panic.
 
 Deployment adds a second env file, `deploy/.env` (template:
 `deploy/.env.example`), for the public hostname, ACME email, Basic Auth
-username/bcrypt hash, optional DuckDNS updater and backup settings. It is
-git-ignored - never commit it.
+username/bcrypt hash, optional DuckDNS updater, backup settings and the optional
+Google client. It is git-ignored - never commit it.
+
+### Google Drive sync
+
+Sync is optional and off by default. Setup is entirely on your own Google
+account and needs no paid service: create a Cloud project, enable the Drive
+API, create an OAuth client (Desktop app for `http://127.0.0.1:<PORT>`, Web
+application for a hosted HTTPS URL), and add your account as a test user while
+the consent screen is in Testing. The app requests only
+`https://www.googleapis.com/auth/drive.appdata`, stores tokens with Windows
+DPAPI (or a mode-0600 file elsewhere), and never sends them to the browser.
+
+Full steps, including the 7-day refresh-token caveat in Testing mode, are in
+[`docs/google-drive-setup.md`](docs/google-drive-setup.md). The design and
+conflict rules are in [`docs/sync-architecture.md`](docs/sync-architecture.md).
+
+Important honesty: Google Drive stores data; it does not host the app. A phone
+can only use Scout while it can reach a running backend (same LAN, Tailscale
+free plan, a temporary Cloudflare tunnel, or the optional Always Free VM).
 
 ## Develop
 
@@ -87,7 +113,7 @@ deployment scripts, `docker compose config` for both profiles, and
 
 Base path: `/api`. Errors are `{"error":{"code","message"}}`.
 
-Key endpoints (see [`docs/api.md`](docs/api.md) for full request/response shapes): `GET /api/health`, `GET /api/dashboard`, `GET /api/meta`, CRUD `/api/communities` + `/api/communities/:id/review`, `POST /api/csv/preview|commit`, `GET /api/csv/export`, `GET /api/sources`, `GET /api/discovery/runs`, `POST /api/discovery/search`, `POST /api/message/draft`. A `robots.txt` disallows `/api/`.
+Key endpoints (see [`docs/api.md`](docs/api.md) for full request/response shapes): `GET /api/health`, `GET /api/dashboard`, `GET /api/meta`, CRUD `/api/communities` + `/api/communities/:id/review`, `POST /api/csv/preview|commit`, `GET /api/csv/export`, `GET /api/sources`, `GET /api/discovery/runs`, `POST /api/discovery/search`, `POST /api/message/draft`, `GET /api/auth/status`, `GET /api/auth/google/start`, `POST /api/auth/logout`, `GET /api/sync/status|conflicts|export|snapshots`, `POST /api/sync/run|migrate|conflicts/:id/resolve|snapshots/:name/restore`. A `robots.txt` disallows `/api/`.
 
 ## Data sources
 
@@ -136,6 +162,13 @@ production `Dockerfile` builds for arm64, the container answers `/api/health`,
 a created record survives `docker restart`, and the deployment scripts/Caddyfile
 pass validation (Compose v2.29.7, Caddy 2.8.4). Certificate issuance and a real
 backup/restore test still require the VM and are not claimed.
+
+**Optional Google sync on the VM**: set `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `SCOUT_PUBLIC_URL=https://<SITE_ADDRESS>` in
+`deploy/.env`, and register `https://<SITE_ADDRESS>/api/auth/google/callback` as
+the redirect URI on a **Web application** OAuth client. The compose file passes
+these to the app; empty values keep sync disabled. Google is not required for
+any other feature.
 
 ## Licence
 

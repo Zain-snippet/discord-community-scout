@@ -17,6 +17,27 @@ committed, builds, and its tests pass.
 | 9 | Oracle Cloud Always Free deployment packaging | done — `deploy/` compose + Caddyfile + env template, `scripts/` install/deploy/backup/restore/verify, HTTPS + bcrypt Basic Auth, firewall, DuckDNS updater, backup timer; Compose v2.29.7 and Caddy 2.8.4 validation passed; production image built and smoke-tested on a native ARM64 runner |
 | 10 | Live deployment and restore proof | **blocked** — needs an Oracle Cloud account/VM and DuckDNS hostname owned by the user; no public URL exists yet |
 
+| 11 | Local-first Google Drive sync (optional) | done — server-side PKCE OAuth, one Drive `appDataFolder` document, SQLite cache, three-way field merge, conflict/migration UI, bounded snapshots, export/restore; 130 tests pass |
+| 12 | Real Google OAuth and cross-device proof | **blocked** — needs a Google Cloud project, an OAuth client and a real Google account owned by the user; no live Drive sync is claimed |
+
+## Sync status (milestone 11)
+
+Implemented and tested locally, **not verified against Google**:
+
+- [x] Authorization Code + PKCE (S256), single-use state, scope `drive.appdata` only
+- [x] Server-side token storage: Windows DPAPI, mode-0600 file elsewhere; logout revokes
+- [x] One versioned JSON document in `appDataFolder` with `version`/`ETag` and `If-Match`
+- [x] SQLite remains the operational store; startup pull, debounced save, retry with backoff
+- [x] Three-way (`base`/`local`/`remote`) field merge; same-field clashes become conflicts
+- [x] Deletion conflicts preserve the record until the user chooses; no silent deletion
+- [x] "Synced" is only shown after a confirmed upload; offline/pending/error states distinct
+- [x] Migration choices (merge / use cloud / upload local) with explicit confirmation
+- [x] Bounded snapshots (five kept), JSON export, restore with confirmation
+- [x] Existing features and all 130 tests still pass; clippy/fmt clean
+- [ ] A real OAuth consent and token refresh against Google
+- [ ] Two real devices reconciling through Drive
+- [ ] A live phone/browser session against a reachable backend
+
 ## Deployment status (milestone 10)
 
 Prepared and statically validated, **not live**:
@@ -51,3 +72,13 @@ Prepared and statically validated, **not live**:
   owner's account and has not been done; no URL is claimed.
 - **The opportunity is never described as verified.** The generator emits drafts
   with the $12 deposit disclosed; whether to post is a human decision.
+- **Google Drive stores data; it does not host the app.** A phone uses Scout
+  only while it can reach a running backend (LAN, Tailscale free plan, a
+  temporary tunnel, or the optional Always Free VM). Drive is not a server.
+- **Google OAuth is implemented but unverified here.** No Google Cloud project
+  or account exists in this environment, so consent, token refresh and Drive
+  writes have not been exercised against Google. See
+  `docs/google-drive-setup.md`. While the consent screen is in Testing, refresh
+  tokens expire after 7 days and only listed test users can sign in.
+- **Non-Windows token storage is file-based.** Windows uses DPAPI; Linux/macOS
+  use a `0600` file with a warning, not an OS keychain.

@@ -1,8 +1,9 @@
 # Local-first sync architecture (Google Drive)
 
-Status: **design + implementation in progress.** Google OAuth has not been run
-against a real Google account from this environment. Nothing in this document
-claims that a live Drive sync has been verified.
+Status: **implemented.** Google OAuth has not been run against a real Google
+account from this environment. Nothing in this document claims that a live Drive
+sync has been verified. This is the design the code follows; for setup steps see
+[`google-drive-setup.md`](google-drive-setup.md).
 
 ## 1. Audit of the existing application
 
@@ -148,22 +149,27 @@ most recent discovery runs, schema version, workspace ID, generation, device ID.
 Excluded: tokens and secrets, HTML, images, search payloads, caches, logs,
 duplicate records. Scores are stored but **recomputed locally after a merge**
 from the merged fields, so two devices never fight over derived numbers.
-Tombstones (`"deleted": true`) are kept for 90 days so deletions propagate and
-records cannot be resurrected by a stale device.
+
+Deletions are propagated without a tombstone table: the base document still
+lists the record while the local snapshot does not, so a deletion is visible in
+the three-way comparison. A deletion that races a modification becomes a
+conflict instead of silently winning.
 
 ## 5. Synchronization model
 
 Local SQLite remains the operational store. New tables:
 
 - `sync_state` — singleton: workspace ID, device ID, Drive file ID, base
-  revision/etag, base document JSON, last sync time, dirty flag, status,
+  revision/ETag, base document JSON, last sync time, dirty counter, status,
   last error.
 - `sync_conflicts` — one row per unresolved field conflict.
-- `sync_tombstones` — local deletions not yet uploaded.
 
-Triggers mark `sync_state.dirty = 1` on community changes, so every write path
-(manual, CSV import, discovery save, review) is covered without instrumenting
-each handler.
+Triggers increment `sync_state.dirty` on community, provenance, settings and
+discovery-run changes, so every write path (manual, CSV import, discovery save,
+review) is covered without instrumenting each handler. A sync clears the counter
+only if it is unchanged from the value observed at the start of the cycle, so a
+write that lands mid-cycle schedules another sync. `same_content` is the
+correctness backstop; dirty is a fast path.
 
 Sync cycle (single-flight, one at a time):
 
@@ -180,7 +186,7 @@ Sync cycle (single-flight, one at a time):
    the last known ETag. On `412` the remote changed underneath us: re-download,
    merge again (bounded retries).
 8. On success: base = uploaded document, base revision/ETag updated, dirty
-   cleared, tombstones cleared, `last_synced_at` set.
+   counter cleared (only if unchanged), `last_synced_at` set.
 
 Triggers: startup, local change (2 s debounce), manual "Sync now", tab
 returning to the foreground, and a 2-minute metadata check while signed in.
@@ -203,15 +209,21 @@ Per community, comparing **base / local / remote** field by field:
 
 Every community has a UUID; names are never used as identity. Conflicts are
 resolved in the UI one field at a time ("keep this device" / "keep other
-device"). Resolution moves the base value to the remote value for that field so
-the next merge uploads the chosen value without re-conflicting.
+device"). Resolutions are applied to the **merged result**, not to the base, so
+"keep this device" actually uploads the local value on the next cycle (and
+"keep other device" keeps the remote value). The conflict id is deterministic
+(`<community_id>::<field>`), so a repeated sync does not duplicate a row the user
+is already looking at. Deletion conflicts use the field `__deleted__` and keep
+the full local and remote record JSON.
 
 ## 7. Local cache, offline and integrity
 
 - SQLite serves the UI immediately, including offline, and stores pending
   changes. Nothing is discarded on logout, close, or network failure.
-- The UI distinguishes "Synced", "Changes pending", "Syncing", "Offline",
-  "Conflict", "Authentication expired", "Sync failed".
+- The UI distinguishes "Synced", "Pending" (changes waiting), "Syncing",
+  "Offline", "Conflict", "Authentication expired", "Failed" and
+  "Migration required". Automatic sync pauses while a conflict or migration is
+  open; the pill turns into the entry point for resolving it.
 - Safety rails: validate before applying; never overwrite unparseable cloud
   data; refuse to upload an empty workspace over a non-empty cloud document
   unless the user actually deleted those records; snapshot the previous local

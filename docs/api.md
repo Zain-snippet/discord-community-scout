@@ -344,3 +344,126 @@ Builds deterministic drafts — no AI service, no API key.
 - A runtime guard re-checks every draft against a forbidden-claims list and refuses
   to return one that contains an unsupported claim.
 
+---
+
+## Google auth and sync
+
+These endpoints are always present. When `GOOGLE_CLIENT_ID` is unset, sync is
+`disconnected`, `GET /api/auth/google/start` returns `400`, and no Google request
+is made. See [`google-drive-setup.md`](google-drive-setup.md) for setup.
+
+### GET /api/auth/status and GET /api/sync/status
+
+Both return the same shape:
+
+```json
+{
+  "google": {
+    "configured": true,
+    "signed_in": true,
+    "token_storage": "Windows DPAPI"
+  },
+  "sync": {
+    "status": "synced",
+    "raw_status": "synced",
+    "last_synced_at": "2026-11-21T16:00:00Z",
+    "last_error": null,
+    "dirty": false,
+    "conflicts": 0,
+    "records": 12,
+    "workspace_id": "uuid",
+    "has_base": true,
+    "generation": 4
+  }
+}
+```
+
+`status` is one of `disconnected`, `synced`, `pending`, `syncing`, `offline`,
+`conflict`, `auth_expired`, `failed`, `migration_required`. Never render
+"Synced" from `dirty: false` alone; use `status`.
+
+### GET /api/auth/google/start
+
+Redirects to Google with PKCE, a single-use state (10 minutes) and the
+`drive.appdata` scope. `400` when sync is not configured.
+
+### GET /api/auth/google/callback
+
+Google's redirect target. Always redirects to `/?google=connected`,
+`/?google=denied` or `/?google=error`; tokens never appear in the URL or body.
+
+### POST /api/auth/logout
+
+Revokes the refresh token at Google, deletes the local credential and returns
+the status shape above. Local records and the Drive document are untouched.
+
+### POST /api/sync/run
+
+Runs one single-flight cycle and returns a report. A cycle already in progress
+returns `status: "syncing"` rather than queueing.
+
+```json
+{ "status": "synced", "message": "Changes uploaded.", "conflicts": 0,
+  "records": 12, "uploaded": true }
+```
+
+### GET /api/sync/conflicts
+
+One row per unresolved field conflict.
+
+```json
+[{
+  "id": "uuid::user_notes", "community_id": "uuid", "community_name": "Students Hub",
+  "field": "user_notes", "base_value": "", "local_value": "local note",
+  "remote_value": "other note", "created_at": "…"
+}]
+```
+
+Deletion conflicts use `field: "__deleted__"` with values `deleted`/`present`.
+No upload happens while a conflict is open.
+
+### POST /api/sync/conflicts/{id}/resolve
+
+```json
+{ "choice": "local" }
+```
+
+`choice` is `local` or `remote`. Only the named field is resolved; the rest of
+the merge stays. Returns a sync report.
+
+### POST /api/sync/migrate
+
+Used when `status` is `migration_required`.
+
+```json
+{ "choice": "merge", "confirm": false }
+```
+
+`choice` is `merge`, `use_cloud` or `upload_local`. `merge` preserves both
+sides. The other two replace one side and return `400` unless `confirm` is
+`true`; the UI shows a snapshot notice first. `upload_local` is refused when a
+cloud document already exists.
+
+### GET /api/sync/export
+
+Downloads the local copy of the cloud document as
+`application/json` with `Content-Disposition: attachment; filename="scout-data.json"`.
+Contains no tokens or secrets.
+
+### GET /api/sync/snapshots
+
+Lists up to five snapshots, newest first.
+
+```json
+[{ "name": "20261121T150000Z-before-first-merge.json", "bytes": 8123 }]
+```
+
+### POST /api/sync/snapshots/{name}/restore
+
+```json
+{ "confirm": true }
+```
+
+Replaces the records present in the snapshot; `confirm` is mandatory. A snapshot
+of the current state is taken first where applicable.
+

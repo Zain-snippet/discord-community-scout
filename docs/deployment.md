@@ -15,9 +15,9 @@ What *has* been checked in the repository (2026-11-17):
 | ARM64 image build + runtime smoke test on GitHub's `ubuntu-24.04-arm` | pass — container starts, `/api/health` returns ok, a created record survives `docker restart` with a named `/app/data` volume |
 
 What has **not** been run: a real VM, DNS, certificate issuance, HTTPS access,
-backup/restore against a live volume. Do not treat the deployment as complete
-until the verification steps in section 11 and the restore test in section 12
-have actually succeeded.
+backup/restore against a live volume, or any real Google OAuth/Drive sync. Do not
+treat the deployment as complete until the verification steps in section 11 and
+the restore test in section 12 have actually succeeded.
 
 ---
 
@@ -47,6 +47,9 @@ have actually succeeded.
 - The SQLite file lives in the named volume `discord-community-scout_app_data`,
   mounted at `/app/data`. It is never served as a static file (Axum serves only
   `static/`).
+- If Google sync is enabled, the app also makes outbound HTTPS requests to
+  Google's OAuth and Drive APIs. No inbound port is opened for this; tokens and
+  snapshots stay under `/app/data`.
 - Caddy state (certificates, ACME account) lives in `caddy_data` and
   `caddy_config`, so certificates survive container/VM restarts.
 - `restart: unless-stopped` on every service plus Docker enabled at boot.
@@ -354,6 +357,56 @@ git status --short          # deploy/.env must not appear
 git check-ignore -v deploy/.env
 ```
 
+### Optional: enable Google Drive sync on the VM
+
+Sync is off by default and every other feature works without it. If you want it,
+do this after the site is reachable over HTTPS (Google requires the redirect URI
+to match exactly):
+
+1. Follow [`google-drive-setup.md`](google-drive-setup.md) and create a **Web
+   application** OAuth client (not Desktop app).
+2. Register this redirect URI, substituting your hostname:
+
+   ```text
+   https://scout-example.duckdns.org/api/auth/google/callback
+   ```
+
+3. Add three lines to `deploy/.env` (the file is already mode `600`):
+
+   ```dotenv
+   SCOUT_PUBLIC_URL=https://scout-example.duckdns.org
+   GOOGLE_CLIENT_ID=1234567890-example.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-example-secret
+   ```
+
+   Keep `SCOUT_PUBLIC_URL` equal to `https://<SITE_ADDRESS>`, with no trailing
+   slash. The compose file passes all three to the app; leaving them empty keeps
+   sync disabled.
+
+4. Re-run `./scripts/deploy.sh` (or `docker compose ... up -d`) so the app
+   restarts with the new environment.
+5. Open the site, click the sync pill, and sign in with Google. The app requests
+   only `drive.appdata`; the token is stored in `/app/data` (a `0600` file on
+   the VM - read the token-storage caveat in `docs/sync-architecture.md`).
+
+If sign-in fails, check:
+
+- the redirect URI in Google Cloud is byte-for-byte
+  `SCOUT_PUBLIC_URL` + `/api/auth/google/callback`;
+- the OAuth client is a **Web application** client, not Desktop;
+- your Google account is listed as a test user while the consent screen is in
+  Testing;
+- `docker compose ... logs app` shows "Google Drive sync enabled" with the
+  expected redirect URI.
+
+Google's servers must be reachable from the VM (outbound 443). No inbound port
+is opened for sync.
+
+> Testing-mode consent screens issue refresh tokens that expire after 7 days;
+> you will be asked to sign in again. Publishing the app avoids that but is
+> subject to Google's verification/user-cap rules. See
+> [`google-drive-setup.md`](google-drive-setup.md).
+
 ---
 
 ## 10. Deploy
@@ -423,7 +476,13 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml restart
 
 Then reload the page and confirm your data is still there.
 
-7. Reboot test (optional, but proves startup order):
+7. If Google sync is enabled: click the sync pill, sign in, and confirm the pill
+   reaches **Synced**. Create a record, sync, then confirm it appears in the
+   second browser/device after a sync. Open the dialog and confirm conflicts,
+   snapshots and "Download a copy" work. Do not describe sync as verified until
+   this has actually succeeded on your account.
+
+8. Reboot test (optional, but proves startup order):
 
 ```bash
 sudo reboot

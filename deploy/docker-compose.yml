@@ -24,6 +24,12 @@ services:
       RUST_LOG: ${RUST_LOG:-info,tower_http=info}
       SCOUT_CACHE_TTL_SECS: ${SCOUT_CACHE_TTL_SECS:-3600}
       TZ: ${TZ:-UTC}
+      # Optional Google Drive sync. Empty values keep sync disabled.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Must equal https://<SITE_ADDRESS> when sync is enabled.
+      SCOUT_PUBLIC_URL: ${SCOUT_PUBLIC_URL:-}
+      SCOUT_DATA_DIR: /app/data
     volumes:
       - app_data:/app/data
     networks:
