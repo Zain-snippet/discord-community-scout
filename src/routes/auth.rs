@@ -5,11 +5,11 @@ use axum::{
     response::Redirect,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
+use super::sync::SyncStatus;
 use super::AppState;
 use crate::error::{AppError, AppResult};
-use crate::sync::engine::SyncSnapshot;
 use crate::sync::store;
 
 #[derive(Debug, Deserialize)]
@@ -19,22 +19,10 @@ pub struct CallbackQuery {
     error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct AuthStatus {
-    pub configured: bool,
-    pub signed_in: bool,
-    pub token_storage: &'static str,
-    pub sync: SyncSnapshot,
-}
-
-pub async fn status(State(state): State<AppState>) -> AppResult<Json<AuthStatus>> {
-    let google = state.google.status().await;
-    let sync = state.sync.snapshot().await?;
-    Ok(Json(AuthStatus {
-        configured: google.configured,
-        signed_in: google.signed_in,
-        token_storage: google.token_storage,
-        sync,
+pub async fn status(State(state): State<AppState>) -> AppResult<Json<SyncStatus>> {
+    Ok(Json(SyncStatus {
+        google: state.google.status().await,
+        sync: state.sync.snapshot().await?,
     }))
 }
 
@@ -83,16 +71,12 @@ pub async fn callback(
     }
 }
 
-pub async fn logout(State(state): State<AppState>) -> AppResult<Json<AuthStatus>> {
+pub async fn logout(State(state): State<AppState>) -> AppResult<Json<SyncStatus>> {
     state.google.logout().await;
     // Local and cloud data are untouched; only the credential is gone.
     store::set_status(&state.pool, "disconnected", None).await?;
-    let google = state.google.status().await;
-    let sync = state.sync.snapshot().await?;
-    Ok(Json(AuthStatus {
-        configured: google.configured,
-        signed_in: google.signed_in,
-        token_storage: google.token_storage,
-        sync,
+    Ok(Json(SyncStatus {
+        google: state.google.status().await,
+        sync: state.sync.snapshot().await?,
     }))
 }

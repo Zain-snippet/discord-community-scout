@@ -33,6 +33,7 @@
             <li><button class="nav-link" data-view="about"><span class="nav-dot" aria-hidden="true"></span>Settings&nbsp;/&nbsp;About</button></li>
           </ul>
         </nav>
+        <div class="sync-panel" id="sync-panel" aria-live="polite"></div>
         <p class="sidebar-note">
           Research tool only. Nothing is posted to Discord automatically.
         </p>
@@ -330,6 +331,11 @@
             <h2>Health</h2>
             <p id="about-health" class="muted small">Checkingâ€¦</p>
           </div>
+
+          <div class="card">
+            <h2>Google Drive sync</h2>
+            <div id="about-sync"></div>
+          </div>
         </section>
       </main>
     </div>
@@ -490,6 +496,16 @@
       <div class="dialog-foot">
         <button class="btn" type="button" data-close="import-dialog">Close</button>
       </div>
+    </dialog>
+
+    <!-- ================================================================ SYNC DIALOG -->
+    <dialog id="sync-dialog" class="dialog-wide" aria-labelledby="sync-dialog-title">
+      <div class="dialog-head">
+        <h2 id="sync-dialog-title">Sync, conflicts and backups</h2>
+        <button class="close-x" type="button" data-close="sync-dialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body" id="sync-dialog-body"></div>
+      <div class="dialog-foot" id="sync-dialog-foot"></div>
     </dialog>
 
     <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>

@@ -186,7 +186,7 @@ function activateView(view) {
   if (view === "discover") { loadSources(); loadRuns(); }
   if (view === "communities") { loadMeta(); loadCommunities(); }
   if (view === "drafts") loadDraftCommunities();
-  if (view === "about") { loadSources(); loadHealth(); }
+  if (view === "about") { loadSources(); loadHealth(); renderAboutSync(); }
 }
 
 /* ------------------------------------------------------------------ overview */
@@ -422,6 +422,7 @@ async function runDiscovery(event) {
 
     loadRuns();
     loadOverview();
+    refreshSyncBadge();
   } catch (error) {
     clear(status);
     status.append(banner(
@@ -624,6 +625,7 @@ async function saveCommunity(event) {
     loadMeta();
     loadCommunities();
     loadOverview();
+    refreshSyncBadge();
   } catch (error) {
     errorBox.append(banner(error.message, "danger"));
   } finally {
@@ -727,6 +729,7 @@ async function saveReview(event) {
     openReview(updated); // refresh the panel in place with the new score
     loadCommunities();
     loadOverview();
+    refreshSyncBadge();
   } catch (error) {
     toast(`Could not save the review: ${error.message}`, "error");
   }
@@ -746,6 +749,7 @@ async function deleteReviewed() {
     loadMeta();
     loadCommunities();
     loadOverview();
+    refreshSyncBadge();
   } catch (error) {
     toast(`Could not delete: ${error.message}`, "error");
   }
@@ -830,6 +834,7 @@ async function commitImport() {
     loadMeta();
     loadCommunities();
     loadOverview();
+    refreshSyncBadge();
     toast(`Imported ${data.imported} and merged ${data.merged}.`, "ok");
   } catch (error) {
     clear(result);
@@ -984,6 +989,544 @@ async function loadHealth() {
   }
 }
 
+/* --------------------------------------------------------------------- sync */
+//
+// The sync state is advisory: the local database is always the source of truth
+// for what this device shows. The pill reports what the backend last confirmed
+// with Google Drive, and never says "Synced" until the backend actually did.
+
+const SYNC_STATUS = {
+  disconnected: { label: "Not signed in", tone: "neutral" },
+  synced: { label: "Synced", tone: "ok" },
+  syncing: { label: "Syncing…", tone: "info" },
+  offline: { label: "Offline", tone: "warn" },
+  pending: { label: "Pending changes", tone: "warn" },
+  conflict: { label: "Conflict", tone: "danger" },
+  auth_expired: { label: "Sign-in expired", tone: "danger" },
+  failed: { label: "Sync failed", tone: "danger" },
+  migration_required: { label: "Choose what to sync", tone: "warn" },
+};
+
+const FIELD_LABELS = {
+  name: "Name",
+  description: "Description",
+  invite_url: "Invite URL",
+  invite_code: "Invite code",
+  canonical_url: "Listing URL",
+  primary_source: "Source",
+  tags: "Tags",
+  member_count: "Member count",
+  language: "Language",
+  review_status: "Review status",
+  promotion_policy: "Promotion policy",
+  policy_evidence: "Rule evidence",
+  policy_checked_at: "Rules checked at",
+  channel_name: "Channel",
+  user_notes: "Notes",
+  contacted_at: "Contacted at",
+  last_checked_at: "Last checked at",
+  created_at: "Created",
+  updated_at: "Updated",
+  sources: "Sources",
+  __deleted__: "Deletion",
+};
+
+const syncState = {
+  auth: null,
+  conflicts: [],
+  busy: false,
+  timer: null,
+};
+
+function syncLabel(snapshot) {
+  if (snapshot?.conflicts > 0) {
+    return `${snapshot.conflicts} conflict${snapshot.conflicts === 1 ? "" : "s"}`;
+  }
+  const meta = SYNC_STATUS[snapshot?.status] || SYNC_STATUS.disconnected;
+  return meta.label;
+}
+
+function syncTone(snapshot) {
+  if (snapshot?.conflicts > 0) return "danger";
+  return (SYNC_STATUS[snapshot?.status] || SYNC_STATUS.disconnected).tone;
+}
+
+function fieldLabel(field) {
+  if (field.startsWith("settings.")) return `Setting: ${field.slice("settings.".length)}`;
+  return FIELD_LABELS[field] || field;
+}
+
+function formatFieldValue(field, raw) {
+  if (raw === null || raw === undefined) return "nothing";
+  if (raw === "") return "empty";
+  if (field === "review_status") return STATUS_LABEL[raw] || raw;
+  if (field === "promotion_policy") return POLICY_LABEL[raw] || raw;
+  if (field === "__deleted__") return raw === "deleted" ? "deleted" : "still present";
+  if (field === "tags" || field === "sources") {
+    try {
+      const value = JSON.parse(raw);
+      if (!Array.isArray(value)) return raw;
+      if (!value.length) return "none";
+      return value
+        .map((item) => (typeof item === "string" ? item : item?.source_name || JSON.stringify(item)))
+        .join(", ");
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+async function loadSyncState() {
+  try {
+    const auth = await api("/auth/status");
+    syncState.auth = auth;
+  } catch {
+    // A transient failure must not break the rest of the page. Keep the last
+    // known state so the pill does not flap.
+  }
+  renderSyncPanel();
+  renderAboutSync();
+  return syncState.auth;
+}
+
+function renderSyncPanel() {
+  const panel = $("#sync-panel");
+  if (!panel) return;
+  clear(panel);
+
+  const auth = syncState.auth;
+  const google = auth?.google;
+  const snapshot = auth?.sync;
+  const configured = Boolean(google?.configured);
+  const signedIn = Boolean(google?.signed_in);
+
+  let label = "Checking sync…";
+  let tone = "neutral";
+  if (auth?.google) {
+    if (!configured) {
+      label = "Sync off";
+    } else {
+      label = syncLabel(snapshot);
+      tone = syncTone(snapshot);
+    }
+  }
+
+  const status = el("button", {
+    class: `sync-status sync-tone-${tone}`,
+    type: "button",
+    onclick: openSyncDialog,
+    title: "Show sync details",
+  },
+    el("span", { class: "sync-dot", "aria-hidden": "true" }),
+    el("span", { class: "sync-label", text: label }));
+
+  panel.append(status);
+
+  if (auth && !configured) {
+    panel.append(el("p", { class: "sync-hint", text: "Google sync is not configured on this server. Everything works locally." }));
+    return;
+  }
+  if (!auth) return;
+
+  const actions = el("div", { class: "sync-actions" });
+  if (!signedIn) {
+    actions.append(el("button", {
+      class: "btn btn-sm",
+      type: "button",
+      text: "Sign in with Google",
+      onclick: signIn,
+    }));
+  } else {
+    const syncButton = el("button", {
+      class: "btn btn-sm",
+      type: "button",
+      text: syncState.busy || snapshot?.status === "syncing" ? "Syncing…" : "Sync now",
+      disabled: syncState.busy || snapshot?.status === "syncing",
+      onclick: syncNow,
+    });
+    actions.append(syncButton);
+    actions.append(el("button", {
+      class: "btn btn-sm btn-ghost",
+      type: "button",
+      text: "Sign out",
+      onclick: signOut,
+    }));
+  }
+  panel.append(actions);
+
+  let hint = "";
+  if (!signedIn) hint = "Your records sync to your own Google Drive app data folder.";
+  else if (snapshot?.status === "conflict" || snapshot?.conflicts > 0) hint = "Two devices changed the same field. Open to choose a value.";
+  else if (snapshot?.status === "migration_required") hint = "Both this device and Drive have records. Choose how to combine them.";
+  else if (snapshot?.status === "auth_expired") hint = "Sign in again. Nothing was lost.";
+  else if (snapshot?.status === "offline") hint = "Drive is unreachable. Changes are saved here and will sync later.";
+  else if (snapshot?.status === "failed") hint = snapshot.last_error || "The last sync did not finish.";
+  else if (snapshot?.dirty) hint = "Local changes are waiting to be sent.";
+  if (hint) panel.append(el("p", { class: "sync-hint", text: hint }));
+}
+
+function renderAboutSync() {
+  const node = $("#about-sync");
+  if (!node) return;
+  clear(node);
+
+  const auth = syncState.auth;
+  if (!auth?.google || !auth?.sync) {
+    node.append(el("p", { class: "muted small", text: "Checking sync status…" }));
+    return;
+  }
+  const google = auth.google;
+  const snapshot = auth.sync;
+
+  if (!google.configured) {
+    node.append(
+      el("p", { class: "small", text: "Google Drive sync is turned off because this server has no Google client configured. All features work with the local database only." }),
+      el("p", { class: "muted small", text: "To enable it, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and restart. See docs/google-drive-setup.md." }),
+    );
+    return;
+  }
+
+  node.append(pill(syncLabel(snapshot), syncTone(snapshot)));
+
+  const facts = el("dl", { class: "facts mt" },
+    el("dt", { text: "Account" }), el("dd", { text: google.signed_in ? "Connected" : "Not connected" }),
+    el("dt", { text: "Token storage" }), el("dd", { text: google.token_storage }),
+    el("dt", { text: "Last confirmed sync" }), el("dd", { text: formatDate(snapshot.last_synced_at) }),
+    el("dt", { text: "Local records" }), el("dd", { text: String(snapshot.records) }),
+    el("dt", { text: "Pending changes" }), el("dd", { text: snapshot.dirty ? "Yes" : "No" }));
+  node.append(facts);
+
+  if (snapshot.last_error) {
+    node.append(el("div", { class: "mt" }, banner(snapshot.last_error, snapshot.status === "failed" || snapshot.status === "auth_expired" ? "danger" : "warn")));
+  }
+
+  const row = el("div", { class: "row mt" });
+  if (google.signed_in) {
+    row.append(el("button", {
+      class: "btn btn-sm",
+      type: "button",
+      text: syncState.busy ? "Syncing…" : "Sync now",
+      disabled: syncState.busy,
+      onclick: syncNow,
+    }));
+  } else {
+    row.append(el("button", {
+      class: "btn btn-sm btn-primary",
+      type: "button",
+      text: "Sign in with Google",
+      onclick: signIn,
+    }));
+  }
+  row.append(el("button", { class: "btn btn-sm", type: "button", text: "Sync details, conflicts and backups", onclick: openSyncDialog }));
+  node.append(row);
+
+  node.append(el("p", { class: "muted small mt mb0", text:
+    "Google Drive stores only this app's own hidden file (drive.appdata). Scout cannot read your other Drive files, and your Discord data is never sent anywhere else. Signing out removes the credential on this server; it does not delete your records." }));
+}
+
+async function signIn() {
+  // A full navigation is required: Google must set its own cookies.
+  window.location.assign("/api/auth/google/start");
+}
+
+async function signOut() {
+  if (!window.confirm("Sign out of Google Drive on this server? Local records stay, and syncing stops until you sign in again.")) {
+    return;
+  }
+  try {
+    const auth = await api("/auth/logout", { method: "POST" });
+    syncState.auth = auth;
+    renderSyncPanel();
+    renderAboutSync();
+    toast("Signed out of Google Drive.", "ok");
+  } catch (error) {
+    toast(`Could not sign out: ${error.message}`, "error");
+  }
+}
+
+async function syncNow() {
+  if (syncState.busy) return;
+  syncState.busy = true;
+  renderSyncPanel();
+  renderAboutSync();
+  try {
+    const report = await api("/sync/run", { method: "POST" });
+    syncState.busy = false;
+    await loadSyncState();
+    if (report.conflicts) {
+      await openSyncDialog();
+      toast(report.message, "error");
+    } else if (report.status === "synced" || report.status === "pending") {
+      toast(report.message, "ok");
+      activateView(state.view);
+    } else if (report.status === "syncing") {
+      // Another sync was already running; the pill will update on the next poll.
+    } else {
+      toast(report.message, "error");
+    }
+  } catch (error) {
+    syncState.busy = false;
+    renderSyncPanel();
+    renderAboutSync();
+    toast(`Sync failed: ${error.message}`, "error");
+  }
+}
+
+/* ------------------------------------------------------- sync / backup dialog */
+
+async function openSyncDialog() {
+  const dialog = $("#sync-dialog");
+  if (!dialog) return;
+  const body = $("#sync-dialog-body");
+  const foot = $("#sync-dialog-foot");
+  clear(body);
+  clear(foot);
+  body.append(el("p", { class: "muted small" }, el("span", { class: "spinner", "aria-hidden": "true" }), " Loading sync details…"));
+  foot.append(el("button", { class: "btn", type: "button", text: "Close", onclick: () => dialog.close() }));
+  if (!dialog.open) dialog.showModal();
+
+  await loadSyncState();
+  let conflicts = [];
+  try {
+    conflicts = await api("/sync/conflicts");
+  } catch {
+    conflicts = [];
+  }
+  syncState.conflicts = conflicts;
+
+  clear(body);
+  renderSyncSummary(body, conflicts);
+  if (conflicts.length) renderConflictList(body, conflicts);
+  await renderBackupSection(body);
+}
+
+function renderSyncSummary(body, conflicts) {
+  const snapshot = syncState.auth?.sync;
+  const google = syncState.auth?.google;
+
+  body.append(el("div", { class: "row-between" },
+    el("div", { class: "row" },
+      pill(syncLabel(snapshot), syncTone(snapshot)),
+      el("span", { class: "muted small", text: snapshot?.last_synced_at ? `Last confirmed ${formatDate(snapshot.last_synced_at)}` : "Not synced yet" })),
+    google?.signed_in
+      ? el("button", { class: "btn btn-sm", type: "button", text: syncState.busy ? "Syncing…" : "Sync now", disabled: syncState.busy, onclick: syncNow })
+      : null));
+
+  if (snapshot?.last_error) {
+    body.append(el("div", { class: "mt" }, banner(snapshot.last_error, snapshot.status === "failed" || snapshot.status === "auth_expired" ? "danger" : "warn")));
+  }
+
+  if (snapshot?.status === "migration_required") {
+    renderMigrationSection(body, snapshot);
+  } else if (conflicts.length) {
+    body.append(el("h3", { class: "mt", text: "Resolve conflicts" }));
+    body.append(el("p", { class: "small muted", text: "Both values are kept until you choose. Nothing is uploaded while a conflict is open." }));
+  }
+}
+
+function renderMigrationSection(body, snapshot) {
+  const section = el("div", { class: "migration-section mt" },
+    el("h3", { text: "Combine this device with Google Drive" }),
+    el("p", { class: "small", text: `This device has ${snapshot.records} saved record(s). Drive may already have records too. Choose how to combine them. Nothing is deleted without a confirmation.` }));
+
+  section.append(el("div", { class: "row mt" },
+    el("button", {
+      class: "btn btn-primary",
+      type: "button",
+      text: "Merge both (recommended)",
+      onclick: () => runMigration("merge"),
+    }),
+    el("button", {
+      class: "btn",
+      type: "button",
+      text: "Use the cloud copy",
+      onclick: () => runMigration("use_cloud"),
+    }),
+    el("button", {
+      class: "btn",
+      type: "button",
+      text: "Upload this device's data",
+      onclick: () => runMigration("upload_local"),
+    })));
+
+  section.append(el("p", { class: "muted small", text:
+    "Merge keeps records from both sides and asks you about any field two devices changed. \"Use the cloud copy\" and \"Upload this device's data\" replace one side, so they ask for confirmation and keep a snapshot first." }));
+  body.append(section);
+}
+
+function renderConflictList(body, conflicts) {
+  const list = el("div", { class: "conflict-list" });
+  conflicts.forEach((conflict, index) => {
+    const localRadio = el("input", { type: "radio", name: `conflict-${index}`, value: "local" });
+    const remoteRadio = el("input", { type: "radio", name: `conflict-${index}`, value: "remote" });
+    localRadio.checked = true;
+
+    const isDeletion = conflict.field === "__deleted__";
+    const localText = isDeletion
+      ? (conflict.local_value === "deleted" ? "This device deleted the record" : "This device still has the record")
+      : formatFieldValue(conflict.field, conflict.local_value);
+    const remoteText = isDeletion
+      ? (conflict.remote_value === "deleted" ? "The other device deleted the record" : "The other device still has the record")
+      : formatFieldValue(conflict.field, conflict.remote_value);
+
+    const item = el("div", { class: "conflict-item" },
+      el("div", { class: "conflict-head" },
+        el("strong", { text: conflict.community_name || "Record" }),
+        el("span", { class: "muted small", text: fieldLabel(conflict.field) })),
+      el("label", { class: "conflict-choice" },
+        localRadio,
+        el("span", { class: "conflict-tag", text: "This device" }),
+        el("span", { class: "conflict-value", text: localText })),
+      el("label", { class: "conflict-choice" },
+        remoteRadio,
+        el("span", { class: "conflict-tag", text: "Other device" }),
+        el("span", { class: "conflict-value", text: remoteText })));
+
+    if (conflict.base_value !== null && conflict.base_value !== undefined && !isDeletion) {
+      item.append(el("p", { class: "muted small mb0", text: `Last synced value: ${formatFieldValue(conflict.field, conflict.base_value)}` }));
+    }
+
+    item.append(el("div", { class: "row mt" },
+      el("button", {
+        class: "btn btn-sm btn-primary",
+        type: "button",
+        text: "Keep selected value",
+        onclick: (event) => applyConflict(conflict.id, remoteRadio.checked ? "remote" : "local", event.currentTarget),
+      })));
+
+    list.append(item);
+  });
+  body.append(list);
+}
+
+async function applyConflict(id, choice, button) {
+  if (button) button.disabled = true;
+  try {
+    const report = await api(`/sync/conflicts/${encodeURIComponent(id)}/resolve`, {
+      method: "POST",
+      body: { choice },
+    });
+    await loadSyncState();
+    activateView(state.view);
+    if (report.conflicts) {
+      toast(`${report.conflicts} conflict(s) still open.`, "warn");
+    } else {
+      toast(report.status === "synced" ? "Conflict resolved and synced." : report.message, report.status === "synced" ? "ok" : "warn");
+    }
+    await openSyncDialog();
+  } catch (error) {
+    if (button) button.disabled = false;
+    toast(`Could not resolve: ${error.message}`, "error");
+  }
+}
+
+async function runMigration(choice) {
+  const messages = {
+    merge: "Merge records from this device and Google Drive? Nothing is overwritten; conflicting fields will ask you to choose.",
+    use_cloud: "Replace this device's records with the Google Drive copy? A snapshot of the current data is saved first.",
+    upload_local: "Create or replace the Drive copy with this device's records? This is refused when Drive already has data, and a snapshot is saved first.",
+  };
+  if (!window.confirm(messages[choice])) return;
+  const body = { choice, confirm: choice !== "merge" };
+  try {
+    const report = await api("/sync/migrate", { method: "POST", body });
+    await loadSyncState();
+    activateView(state.view);
+    if (report.conflicts) {
+      toast(report.message, "error");
+    } else {
+      toast(report.message, report.status === "synced" ? "ok" : "warn");
+    }
+    await openSyncDialog();
+  } catch (error) {
+    toast(`Migration failed: ${error.message}`, "error");
+  }
+}
+
+async function renderBackupSection(body) {
+  body.append(el("div", { class: "divider" }));
+  body.append(el("h3", { text: "Backup and restore" }));
+  body.append(el("p", { class: "small muted", text:
+    "A copy is kept automatically before risky changes. Newer copies replace older ones, and the most recent five are listed here." }));
+
+  body.append(el("div", { class: "row mt" },
+    el("a", { class: "btn btn-sm", href: "/api/sync/export", download: "scout-data.json" }, "Download a copy")));
+
+  const listNode = el("ul", { class: "snapshot-list" });
+  body.append(listNode);
+
+  let snapshots = [];
+  try {
+    snapshots = await api("/sync/snapshots");
+  } catch (error) {
+    listNode.append(el("li", { class: "muted small", text: `Could not list snapshots: ${error.message}` }));
+    return;
+  }
+  if (!snapshots.length) {
+    listNode.append(el("li", { class: "muted small", text: "No snapshots yet. One is created automatically before a risky change." }));
+    return;
+  }
+  for (const snapshot of snapshots) {
+    const size = snapshot.bytes < 1024 ? `${snapshot.bytes} B` : `${(snapshot.bytes / 1024).toFixed(1)} KiB`;
+    listNode.append(el("li", { class: "snapshot-row" },
+      el("span", { class: "snapshot-name", text: snapshot.name }),
+      el("span", { class: "muted small", text: size }),
+      el("button", {
+        class: "btn btn-sm",
+        type: "button",
+        text: "Restore",
+        onclick: () => restoreSnapshot(snapshot.name),
+      })));
+  }
+}
+
+async function restoreSnapshot(name) {
+  if (!window.confirm(`Restore ${name}? This replaces the records on this device with that copy. A snapshot of the current data is saved first.`)) {
+    return;
+  }
+  try {
+    const report = await api(`/sync/snapshots/${encodeURIComponent(name)}/restore`, {
+      method: "POST",
+      body: { confirm: true },
+    });
+    await loadSyncState();
+    activateView(state.view);
+    toast(report.status === "synced" ? "Snapshot restored and synced." : report.message, report.status === "synced" ? "ok" : "warn");
+    await openSyncDialog();
+  } catch (error) {
+    toast(`Restore failed: ${error.message}`, "error");
+  }
+}
+
+function startSyncPolling() {
+  if (syncState.timer) window.clearInterval(syncState.timer);
+  syncState.timer = window.setInterval(() => {
+    if (document.visibilityState === "visible") loadSyncState();
+  }, 20000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") loadSyncState();
+  });
+}
+
+/** Handles the ?google=… result of the OAuth redirect without leaving it in the URL. */
+function readGoogleRedirect() {
+  const params = new URLSearchParams(location.search);
+  const result = params.get("google");
+  if (!result) return;
+  if (result === "connected") toast("Connected to Google Drive.", "ok");
+  else if (result === "denied") toast("Google sign-in was cancelled. Nothing changed.", "warn");
+  else toast("Google sign-in did not complete. Try again.", "error");
+  params.delete("google");
+  const query = params.toString();
+  history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+}
+
+/** Cheap badge refresh after a local write; does not trigger a network sync. */
+function refreshSyncBadge() {
+  loadSyncState();
+}
+
 /* --------------------------------------------------------------- wiring / init */
 
 function wireEvents() {
@@ -1075,7 +1618,10 @@ function init() {
   wireEvents();
   const initial = VIEWS.includes(location.hash.replace("#", "")) ? location.hash.replace("#", "") : "overview";
   setView(initial);
+  readGoogleRedirect();
   loadOverview();
+  loadSyncState();
+  startSyncPolling();
 }
 
 init();
